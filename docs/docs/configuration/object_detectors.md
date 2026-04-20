@@ -2051,7 +2051,7 @@ Hardware accelerated object detection is supported on the following Qualcomm SoC
 
 - QCS6490 (Hexagon v68, ~12 TOPS) — including the [Radxa Dragon Q6A](https://radxa.com/products/dragon/q6a/) and similar boards
 
-This implementation uses the [Qualcomm AI Engine Direct (QNN) SDK](https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk) (QAIRT 2.37.1) via the [`qai_appbuilder`](https://github.com/quic/ai-engine-direct-helper) Python bindings. Models are pre-compiled QNN context binaries (`.bin`) downloaded from [Qualcomm AI Hub](https://aihub.qualcomm.com/).
+This implementation uses the [Qualcomm AI Runtime (QAIRT) SDK](https://www.qualcomm.com/developer/software/qualcomm-ai-runtime-sdk) via the open-source [`qai_appbuilder`](https://github.com/quic/ai-engine-direct-helper) Python bindings (BSD-3). The QAIRT runtime libraries are mounted from the host at `/opt/qairt` — they are not bundled in the Frigate image. Models are pre-compiled QNN context binaries (`.bin`) downloaded from [Qualcomm AI Hub](https://aihub.qualcomm.com/).
 
 :::warning
 
