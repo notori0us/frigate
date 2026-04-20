@@ -81,9 +81,14 @@ fi
 echo
 echo "Hexagon NPU host setup complete."
 echo "Log out and back in for fastrpc group membership to take effect, then:"
-echo "  docker run ... ghcr.io/blakeblackshear/frigate:stable-qcs6490"
-echo "Pass these to the container (devices, group, env):"
+echo "  docker run ... ghcr.io/blakeblackshear/frigate:stable-qualcomm"
+echo "Pass these to the container (devices, group, QAIRT mounts):"
 echo "  --device /dev/fastrpc-cdsp --device /dev/fastrpc-cdsp-secure"
 echo "  --device /dev/fastrpc-adsp --device /dev/dma_heap/system"
 echo "  --group-add \$(getent group fastrpc | cut -d: -f3)"
 echo "  -v /usr/lib/dsp:/usr/lib/dsp:ro -v /usr/lib/rfsa:/usr/lib/rfsa:ro"
+echo "  -v /opt/qcom/qairt/<version>/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro"
+echo "  -v /opt/qcom/qairt/<version>/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro"
+echo
+echo "Download QAIRT Community Edition (free, no portal login):"
+echo "  https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/<version>/v<version>.zip"

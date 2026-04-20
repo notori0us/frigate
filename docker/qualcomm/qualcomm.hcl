@@ -16,8 +16,8 @@ target rootfs {
   target = "rootfs"
 }
 
-target qcs6490 {
-  dockerfile = "docker/qcs6490/Dockerfile"
+target qualcomm {
+  dockerfile = "docker/qualcomm/Dockerfile"
   contexts = {
     wheels = "target:wheels",
     deps = "target:deps",

@@ -197,9 +197,9 @@ jobs:
           set: |
             synaptics.tags=${{ steps.setup.outputs.image-name }}-synaptics
             *.cache-from=type=gha
-  qcs6490_build:
+  qualcomm_build:
     runs-on: ubuntu-22.04-arm
-    name: Qualcomm QCS6490 Build
+    name: Qualcomm Build
     needs:
       - arm64_build
     steps:
@@ -217,10 +217,10 @@ jobs:
         with:
           source: .
           push: true
-          targets: qcs6490
-          files: docker/qcs6490/qcs6490.hcl
+          targets: qualcomm
+          files: docker/qualcomm/qualcomm.hcl
           set: |
-            qcs6490.tags=${{ steps.setup.outputs.image-name }}-qcs6490
+            qualcomm.tags=${{ steps.setup.outputs.image-name }}-qualcomm
             *.cache-from=type=gha
   # The majority of users running arm64 are rpi users, so the rpi
   # build should be the primary arm64 image

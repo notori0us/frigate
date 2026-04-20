@@ -65,8 +65,8 @@ class QnnDetector(DetectionApi):
         super().__init__(detector_config)
         if not QNN_SUPPORT:
             logger.error(
-                "qai_appbuilder is not installed. Use the -qcs6490 Docker image "
-                "variant for Qualcomm Hexagon NPU support."
+                "qai_appbuilder is not installed. Use the -qualcomm Docker "
+                "image variant for Qualcomm Hexagon NPU support."
             )
             return
 
