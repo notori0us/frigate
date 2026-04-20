@@ -6,21 +6,29 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Globally set pip break-system-packages option to avoid having to specify it every time
 ARG PIP_BREAK_SYSTEM_PACKAGES=1
 
-# qai_appbuilder version. Pinned because the Python ABI between qai_appbuilder
-# and the QAIRT runtime libraries it loads is locked per release; users must
-# install a matching QAIRT SDK version on the host.
+# ============================================================================
+# !!! TEMPORARY — DO NOT MERGE UPSTREAM !!!
 #
-# As of writing, qai_appbuilder publishes Linux wheels for cp310, cp312, and
-# cp313 — see https://github.com/quic/ai-engine-direct-helper/releases. The
-# cp311 wheel (matching Frigate's Debian 12 / Python 3.11 base image) is
-# requested upstream in https://github.com/quic/ai-engine-direct-helper/issues/91.
-# Once that ships, this image builds cleanly with no extra steps.
-ARG QAI_APPBUILDER_VERSION=2.38.0
+# qai_appbuilder publishes Linux aarch64 wheels for cp310, cp312, and cp313 on
+# PyPI, but not cp311 — the version Frigate's Debian 12 base image runs.
+# Tracked upstream at https://github.com/quic/ai-engine-direct-helper/issues/91.
+#
+# As a stopgap so this fork can build + run, we install a locally-rebuilt cp311
+# wheel from a personal release. It's the same BSD-3 source as upstream, just
+# compiled on a Radxa Dragon Q6A against QAIRT 2.37.1. Wheel + license details:
+#   https://github.com/notori0us/qai-appbuilder-wheel
+#
+# Once issue #91 ships an official cp311 wheel on PyPI, replace the WHEEL_URL
+# block below with:
+#   RUN pip3 install --no-cache-dir "qai-appbuilder==<version>"
+# and delete this comment block.
+# ============================================================================
+ARG QAI_APPBUILDER_WHEEL_URL=https://github.com/notori0us/qai-appbuilder-wheel/releases/download/v2.37.1.68-frigate-fork-test/qai_appbuilder-2.37.1.68-cp311-cp311-linux_aarch64.whl
 
 FROM deps AS qualcomm-frigate
 ARG DEBIAN_FRONTEND
 ARG PIP_BREAK_SYSTEM_PACKAGES
-ARG QAI_APPBUILDER_VERSION
+ARG QAI_APPBUILDER_WHEEL_URL
 
 # QAIRT runtime libs (libQnnHtp*.so etc.), the cDSP firmware, and the fastrpc
 # user-space all live OUTSIDE this image — they are mounted in from the host
@@ -30,7 +38,8 @@ ARG QAI_APPBUILDER_VERSION
 #   https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/<version>/v<version>.zip
 #
 # See docs/docs/frigate/installation.md for the full host setup recipe.
-RUN pip3 install --no-cache-dir "qai-appbuilder==${QAI_APPBUILDER_VERSION}"
+ADD --chmod=644 ${QAI_APPBUILDER_WHEEL_URL} /tmp/qai_appbuilder.whl
+RUN pip3 install --no-cache-dir /tmp/qai_appbuilder.whl && rm /tmp/qai_appbuilder.whl
 
 WORKDIR /opt/frigate/
 COPY --from=rootfs / /
