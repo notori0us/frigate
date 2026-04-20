@@ -452,26 +452,41 @@ $ ls /dev/fastrpc-*
 
 #### Installation
 
-Hexagon NPU access requires the QAIRT runtime libraries (shipped in the Frigate `-qcs6490` image), the FastRPC user-space (`libcdsprpc.so`, `cdsprpcd`), and the cDSP firmware/skel libraries that the QNN HTP backend dlopens at runtime. The latter two live on the host. We provide a convenient script to install them on Debian/Armbian-based systems.
+Hexagon NPU access requires three things from the host: the FastRPC user-space (`libcdsprpc.so`, `cdsprpcd`) and the cDSP firmware/skel libraries (the QNN HTP backend `dlopen`s these at runtime), plus the **QAIRT runtime libraries** which Frigate does NOT bundle and which you mount into the container at runtime.
 
-Follow these steps:
+##### Step 1: FastRPC + firmware + group
 
-1. Download [`user_installation.sh`](https://raw.githubusercontent.com/blakeblackshear/frigate/dev/docker/qcs6490/user_installation.sh).
+We provide a convenient script for Radxa Dragon Q6A and similar Debian/Armbian boards:
+
+1. Download [`user_installation.sh`](https://raw.githubusercontent.com/blakeblackshear/frigate/dev/docker/qualcomm/user_installation.sh).
 2. Make it executable: `sudo chmod +x user_installation.sh`
-3. Run the script: `sudo ./user_installation.sh`
+3. Run it: `sudo ./user_installation.sh`
 4. Log out and back in so your user picks up the `fastrpc` group.
 
-The script installs the [`fastrpc`](https://github.com/radxa-pkg/fastrpc) user-space, the [`radxa-firmware-qcs6490`](https://github.com/radxa-pkg/radxa-firmware) firmware, disables the conflicting `hexagonrpcd` services, and starts a `cdsprpcd` systemd service.
+The script installs the [`fastrpc`](https://github.com/radxa-pkg/fastrpc) user-space, the [`radxa-firmware-qcs6490`](https://github.com/radxa-pkg/radxa-firmware) firmware, disables the conflicting `hexagonrpcd` services, and starts a `cdsprpcd` systemd service. For non-Radxa QCS6490 boards, install your board vendor's equivalent FastRPC + cDSP firmware packages.
+
+##### Step 2: Download the QAIRT SDK
+
+The QAIRT runtime libraries are proprietary Qualcomm and are distributed by Qualcomm directly. The **Community Edition** is freely downloadable, no portal login required:
+
+```bash
+QAIRT_VERSION=2.38.0.250901
+curl -A 'Mozilla/5.0' -L -o qairt.zip \
+  "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_VERSION}/v${QAIRT_VERSION}.zip"
+sudo unzip -q qairt.zip -d /opt/qcom/
+```
+
+The version must match the `qai_appbuilder` Python wheel built into the Frigate image — see the [Frigate image release notes](https://github.com/blakeblackshear/frigate/releases) for the matching QAIRT version.
 
 #### Setup
 
-Follow Frigate's default installation instructions, but use a docker image with `-qcs6490` suffix, for example `ghcr.io/blakeblackshear/frigate:stable-qcs6490`.
+Use a Docker image with the `-qualcomm` suffix, for example `ghcr.io/blakeblackshear/frigate:stable-qualcomm`.
 
-Grant the container access to the FastRPC devices and the host's cDSP firmware paths. Add the following to your `docker-compose.yml`:
+Grant the container access to the FastRPC devices, the host's cDSP firmware paths, and mount the QAIRT runtime libraries. Add the following to your `docker-compose.yml`:
 
 ```yaml
 group_add:
-  - "107" # fastrpc group GID. Verify with `getent group fastrpc`.
+  - "107" # fastrpc group GID on the host. Verify with `getent group fastrpc`.
 devices:
   - /dev/fastrpc-cdsp
   - /dev/fastrpc-cdsp-secure
@@ -480,9 +495,12 @@ devices:
 volumes:
   # cDSP firmware refuses to load skels from any path other than these on
   # the host. Bind-mount them into the container so they appear at the
-  # expected locations.
+  # expected locations inside the container.
   - /usr/lib/dsp:/usr/lib/dsp:ro
   - /usr/lib/rfsa:/usr/lib/rfsa:ro
+  # QAIRT runtime libraries (downloaded in Step 2 above). Adjust the version.
+  - /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
+  - /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
 ```
 
 Or, with `docker run`:
@@ -494,7 +512,9 @@ Or, with `docker run`:
 --device /dev/fastrpc-adsp \
 --device /dev/dma_heap/system \
 -v /usr/lib/dsp:/usr/lib/dsp:ro \
--v /usr/lib/rfsa:/usr/lib/rfsa:ro
+-v /usr/lib/rfsa:/usr/lib/rfsa:ro \
+-v /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
+-v /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
 ```
 
 #### Configuration
