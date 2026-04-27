@@ -478,6 +478,12 @@ sudo unzip -q qairt.zip -d /opt/qcom/
 
 The version must match the `qai_appbuilder` Python wheel built into the Frigate image — see the [Frigate image release notes](https://github.com/blakeblackshear/frigate/releases) for the matching QAIRT version.
 
+:::warning
+
+The QAIRT version on the host **must match** the `qai_appbuilder` build version in the Frigate image. The QNN binary ABI is locked per release (e.g. `QnnInterface_ImplementationV2_28_t` is added in 2.38.0, `V2_31_t` in 2.42.0). Mismatched versions cause `Inference()` to silently return an empty list at runtime — no Python exception, just zero detections. Watch for `Failed to create transport for device, error: 4000` in the container logs.
+
+:::
+
 #### Setup
 
 Use a Docker image with the `-qualcomm` suffix, for example `ghcr.io/blakeblackshear/frigate:stable-qualcomm`.
@@ -498,6 +504,12 @@ volumes:
   # expected locations inside the container.
   - /usr/lib/dsp:/usr/lib/dsp:ro
   - /usr/lib/rfsa:/usr/lib/rfsa:ro
+  # libcdsprpc.so from the host fastrpc user-space package. The Frigate
+  # image does not bundle this; it is the user-space side of the FastRPC
+  # bridge to the cDSP and is provided by the host fastrpc package.
+  - /usr/lib/libcdsprpc.so:/usr/lib/libcdsprpc.so:ro
+  - /usr/lib/libcdsprpc.so.1:/usr/lib/libcdsprpc.so.1:ro
+  - /usr/lib/libcdsprpc.so.1.0.0:/usr/lib/libcdsprpc.so.1.0.0:ro
   # QAIRT runtime libraries (downloaded in Step 2 above). Adjust the version.
   - /opt/qcom/qairt/2.40.0.251030/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
   - /opt/qcom/qairt/2.40.0.251030/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
@@ -513,6 +525,9 @@ Or, with `docker run`:
 --device /dev/dma_heap/system \
 -v /usr/lib/dsp:/usr/lib/dsp:ro \
 -v /usr/lib/rfsa:/usr/lib/rfsa:ro \
+-v /usr/lib/libcdsprpc.so:/usr/lib/libcdsprpc.so:ro \
+-v /usr/lib/libcdsprpc.so.1:/usr/lib/libcdsprpc.so.1:ro \
+-v /usr/lib/libcdsprpc.so.1.0.0:/usr/lib/libcdsprpc.so.1.0.0:ro \
 -v /opt/qcom/qairt/2.40.0.251030/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
 -v /opt/qcom/qairt/2.40.0.251030/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
 ```

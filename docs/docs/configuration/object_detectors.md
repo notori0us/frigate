@@ -820,6 +820,13 @@ model:
   input_tensor: nhwc
   input_dtype: float
   labelmap_path: /labelmap/coco-80.txt
+
+# Frigate 0.18+ requires detection to be opted in per camera.
+cameras:
+  your_camera:
+    detect:
+      enabled: true
+    # ... rest of camera config
 ```
 
 </TabItem>

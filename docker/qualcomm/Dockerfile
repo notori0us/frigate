@@ -74,11 +74,21 @@ FROM deps AS qualcomm-frigate
 ARG DEBIAN_FRONTEND
 ARG PIP_BREAK_SYSTEM_PACKAGES
 
-# QAIRT runtime libs (libQnnHtp*.so etc.), the cDSP firmware, and the fastrpc
-# user-space all live OUTSIDE this image — they are mounted in from the host
-# at /opt/qairt and /usr/lib/dsp /usr/lib/rfsa. Users download the QAIRT
-# Community Edition SDK directly from Qualcomm (free, no portal login). See
-# docs/docs/frigate/installation.md for the full host setup recipe.
+# Runtime deps NOT in Frigate's base image:
+#   - libatomic1: qai_appbuilder dlopens libatomic.so.1 during QNN system init.
+#     If missing, the detector silently fails to initialize the QNN system
+#     function pointers and `Inference()` returns an empty list at runtime.
+#   - libyaml-0-2: libcdsprpc.so (mounted from the host at runtime) links
+#     against libyaml-0.so.2 for parsing fastrpc shell config.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 libyaml-0-2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# QAIRT runtime libs (libQnnHtp*.so etc.), the cDSP firmware, the fastrpc
+# user-space (libcdsprpc.so) — all live OUTSIDE this image and are mounted in
+# from the host at /opt/qairt, /usr/lib/dsp, /usr/lib/rfsa, and /usr/lib/.
+# Users download the QAIRT Community Edition SDK from Qualcomm (free, no
+# portal login). See docs/docs/frigate/installation.md for the full setup.
 COPY --from=wheel-builder /src/dist/qai_appbuilder-*.whl /tmp/
 RUN pip3 install --no-cache-dir /tmp/qai_appbuilder-*.whl && rm /tmp/qai_appbuilder-*.whl
 
