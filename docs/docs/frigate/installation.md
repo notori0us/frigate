@@ -470,7 +470,7 @@ The script installs the [`fastrpc`](https://github.com/radxa-pkg/fastrpc) user-s
 The QAIRT runtime libraries are proprietary Qualcomm and are distributed by Qualcomm directly. The **Community Edition** is freely downloadable, no portal login required:
 
 ```bash
-QAIRT_VERSION=2.38.0.250901
+QAIRT_VERSION=2.40.0.251030
 curl -A 'Mozilla/5.0' -L -o qairt.zip \
   "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_VERSION}/v${QAIRT_VERSION}.zip"
 sudo unzip -q qairt.zip -d /opt/qcom/
@@ -499,8 +499,8 @@ volumes:
   - /usr/lib/dsp:/usr/lib/dsp:ro
   - /usr/lib/rfsa:/usr/lib/rfsa:ro
   # QAIRT runtime libraries (downloaded in Step 2 above). Adjust the version.
-  - /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
-  - /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
+  - /opt/qcom/qairt/2.40.0.251030/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
+  - /opt/qcom/qairt/2.40.0.251030/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
 ```
 
 Or, with `docker run`:
@@ -513,8 +513,8 @@ Or, with `docker run`:
 --device /dev/dma_heap/system \
 -v /usr/lib/dsp:/usr/lib/dsp:ro \
 -v /usr/lib/rfsa:/usr/lib/rfsa:ro \
--v /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
--v /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
+-v /opt/qcom/qairt/2.40.0.251030/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
+-v /opt/qcom/qairt/2.40.0.251030/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
 ```
 
 #### Configuration
