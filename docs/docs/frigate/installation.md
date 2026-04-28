@@ -538,15 +538,9 @@ Next, configure [hardware object detection](/configuration/object_detectors#qual
 
 #### Troubleshooting
 
-**`IndexError: list index out of range` from `qnn.py` and / or `Failed to create transport for device, error: 4000` in container logs**: the cDSP remoteproc is in a stuck state — typically caused by a Frigate detector subprocess that crashed mid-inference (or a previous container that exited uncleanly). Reset the cDSP from the host:
+**Detection silently stops working / Frigate logs `QNN inference returned unexpected result`**: the cDSP session is in a wedged state. This typically happens after a detector subprocess crash (or after the host kernel has been live for a long time with many container restarts). The plugin disables itself locally when this is detected — it returns zero detections rather than crashing, so Frigate's watchdog won't restart the subprocess and pollute the cDSP further.
 
-```bash
-sudo sh -c 'echo stop > /sys/class/remoteproc/remoteproc1/state; \
-            sleep 2; \
-            echo start > /sys/class/remoteproc/remoteproc1/state'
-```
-
-Then restart the Frigate container. The `user_installation.sh` script installs a `cdsp-reset.service` systemd unit that runs this automatically at host boot, so a clean reboot also recovers.
+**Recovery: reboot the host.** Container restarts are not enough — the wedged state lives in the kernel's fastrpc driver and the cDSP firmware. **Do not** attempt online recovery via `echo stop > /sys/class/remoteproc/remoteproc1/state` while Frigate (or any other process holding `/dev/fastrpc-*` fds) is running. On Linux 6.18 / qcs6490, that triggers a kernel WARNING in `free_contig_range` followed by an unrecoverable data abort in `fastrpc_device_release` on the next `close()` of any open fastrpc fd. The box becomes unresponsive and only a power-cycle recovers.
 
 ### AXERA
 
