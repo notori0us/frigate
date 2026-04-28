@@ -92,11 +92,16 @@ class QnnDetector(DetectionApi):
         self._conf = detector_config.conf_threshold
         self._iou = detector_config.iou_threshold
 
+        # LogLevel.ERROR (not WARN): QAIRT emits a WARN-level
+        # "Time: model_inference yolo Nms" line on every inference, so WARN
+        # produces hundreds of thousands of lines/day at 5fps × 7 cameras.
+        # ERROR keeps real failures visible without the timing spam.
+        # ProfilingLevel.OFF for the same reason.
         QNNConfig.Config(
             detector_config.qnn_lib_dir,
             Runtime.HTP,
-            LogLevel.WARN,
-            ProfilingLevel.BASIC,
+            LogLevel.ERROR,
+            ProfilingLevel.OFF,
         )
         self._ctx = QNNContext("yolo", model_path)
         PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
