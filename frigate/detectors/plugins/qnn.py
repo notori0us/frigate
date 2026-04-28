@@ -1,3 +1,4 @@
+import atexit
 import logging
 import os
 from typing import Literal
@@ -29,6 +30,18 @@ logger = logging.getLogger(__name__)
 DETECTOR_KEY = "qnn"
 DEFAULT_QNN_LIB_DIR = "/opt/qairt/lib"
 MAX_DETECTIONS = 20
+
+
+def _release(ctx) -> None:
+    """Best-effort QNNContext release. The bindings don't expose a public
+    ``close()``; relying on Python GC is fine in normal exit, but registering
+    this as an atexit handler ensures it happens before interpreter shutdown
+    starts tearing down C++ globals — which is what previously left fastrpc
+    fds dangling on detector-subprocess restart."""
+    try:
+        del ctx
+    except Exception:
+        pass
 
 
 class QnnDetectorConfig(BaseDetectorConfig):
@@ -87,6 +100,18 @@ class QnnDetector(DetectionApi):
         )
         self._ctx = QNNContext("yolo", model_path)
         PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
+        # Register clean teardown so the QNNContext (and its underlying
+        # fastrpc session) releases on normal interpreter shutdown — this is
+        # what keeps the cDSP from accumulating stranded sessions across
+        # detector subprocess restarts. Bind to a weak local so the closure
+        # can drop the reference without preventing GC.
+        ctx_ref = self._ctx
+        atexit.register(lambda: setattr(self, "_ctx", None) or _release(ctx_ref))
+        # _wedged is set when an inference returns an unexpected shape,
+        # which on Hexagon NPU means the cDSP session is in a bad state.
+        # We then return zeros forever (rather than crashing → watchdog
+        # restart → more stranded fastrpc fds → eventual kernel fault).
+        self._wedged = False
         logger.info(
             "QNN detector loaded model=%s size=%d soc=%s",
             model_path,
@@ -95,6 +120,9 @@ class QnnDetector(DetectionApi):
         )
 
     def detect_raw(self, tensor_input: np.ndarray) -> np.ndarray:
+        if not QNN_SUPPORT or self._wedged:
+            return np.zeros((MAX_DETECTIONS, 6), dtype=np.float32)
+
         # Frigate hands a view backed by shared-memory mmap. qai_appbuilder's
         # C++ boundary segfaults on non-owning buffers — always copy.
         arr = np.ascontiguousarray(tensor_input, dtype=np.float32)
@@ -104,6 +132,28 @@ class QnnDetector(DetectionApi):
             arr = arr / 255.0
 
         outputs = self._ctx.Inference([arr])
+        # An empty list (or fewer than 3 outputs) means the underlying cDSP
+        # session is unhealthy — typical causes are a stuck remoteproc from
+        # a previous detector subprocess crash, or a wheel/QAIRT SDK ABI
+        # mismatch on the host. Crashing here triggers Frigate's watchdog
+        # to kill+restart this subprocess, which on Linux 6.18 / qcs6490
+        # can strand fastrpc fds and ultimately panic the kernel via
+        # fastrpc_device_release. Disable the detector locally instead and
+        # return zero detections; the user sees "no detections" + the log
+        # line below, recovers with a host reboot per the install docs.
+        if not isinstance(outputs, list) or len(outputs) < 3:
+            self._wedged = True
+            logger.error(
+                "QNN inference returned unexpected result (type=%s len=%s). "
+                "The cDSP session is likely wedged from a prior crash, or "
+                "the QAIRT SDK version on the host does not match the "
+                "qai_appbuilder build. Disabling detection in this detector "
+                "subprocess; reboot the host to recover. See "
+                "docs/frigate/installation#qualcomm-platform troubleshooting.",
+                type(outputs).__name__,
+                len(outputs) if hasattr(outputs, "__len__") else "?",
+            )
+            return np.zeros((MAX_DETECTIONS, 6), dtype=np.float32)
         return self._decode(outputs)
 
     def _decode(self, outputs: list[np.ndarray]) -> np.ndarray:
