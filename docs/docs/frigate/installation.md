@@ -527,6 +527,18 @@ Or, with `docker run`:
 
 Next, configure [hardware object detection](/configuration/object_detectors#qualcomm-hexagon-npu) to complete the setup.
 
+#### Troubleshooting
+
+**`IndexError: list index out of range` from `qnn.py` and / or `Failed to create transport for device, error: 4000` in container logs**: the cDSP remoteproc is in a stuck state — typically caused by a Frigate detector subprocess that crashed mid-inference (or a previous container that exited uncleanly). Reset the cDSP from the host:
+
+```bash
+sudo sh -c 'echo stop > /sys/class/remoteproc/remoteproc1/state; \
+            sleep 2; \
+            echo start > /sys/class/remoteproc/remoteproc1/state'
+```
+
+Then restart the Frigate container. The `user_installation.sh` script installs a `cdsp-reset.service` systemd unit that runs this automatically at host boot, so a clean reboot also recovers.
+
 ### AXERA
 
 AXERA accelerators are available in an M.2 form factor, compatible with both Raspberry Pi and Orange Pi. This form factor has also been successfully tested on x86 platforms, making it a versatile choice for various computing environments.

@@ -71,6 +71,33 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now cdsprpcd
 
+# cDSP recovery service: when a process dies mid-inference (Frigate watchdog
+# kills its detector subprocess, container restart, etc.) the cDSP can be
+# left in a stuck state where new sessions either time out or return empty
+# results. The fix is to bounce the remoteproc, which is cheap (<5s) and
+# safe to do at boot. Running this once on host boot clears any state from
+# a previous boot's crash.
+echo "==> Installing cDSP boot-time reset hook"
+cat >/etc/systemd/system/cdsp-reset.service <<'UNIT'
+[Unit]
+Description=Reset Qualcomm cDSP remoteproc at boot for clean inference state
+After=local-fs.target
+Before=cdsprpcd.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '\
+  echo stop > /sys/class/remoteproc/remoteproc1/state; \
+  sleep 2; \
+  echo start > /sys/class/remoteproc/remoteproc1/state'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable cdsp-reset.service
+
 # Allow non-root containers + users to open /dev/fastrpc-*.
 echo "==> Adding invoking user to fastrpc group"
 TARGET_USER="${SUDO_USER:-$USER}"
@@ -92,3 +119,10 @@ echo "  -v /opt/qcom/qairt/<version>/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro"
 echo
 echo "Download QAIRT Community Edition (free, no portal login):"
 echo "  https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/<version>/v<version>.zip"
+echo
+echo "If detection ever stops working (Frigate logs show 'IndexError' from"
+echo "qnn.py or 'Failed to create transport for device, error: 4000'), the"
+echo "cDSP is in a stuck state. Reset with:"
+echo "  sudo sh -c 'echo stop > /sys/class/remoteproc/remoteproc1/state; \\"
+echo "              sleep 2; echo start > /sys/class/remoteproc/remoteproc1/state'"
+echo "then restart your Frigate container."
