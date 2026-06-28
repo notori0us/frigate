@@ -452,7 +452,7 @@ $ ls /dev/fastrpc-*
 
 #### Installation
 
-Hexagon NPU access requires three things from the host: the FastRPC user-space (`libcdsprpc.so`, `cdsprpcd`) and the cDSP firmware/skel libraries (the QNN HTP backend `dlopen`s these at runtime), plus the **QAIRT runtime libraries** which Frigate does NOT bundle and which you mount into the container at runtime.
+Hexagon NPU access needs a few things from the host: the FastRPC daemon (`cdsprpcd`) and the cDSP firmware/skel libraries (the QNN HTP backend `dlopen`s these at runtime), plus the **QAIRT runtime libraries** which Frigate does NOT bundle and which you mount into the container at runtime. The FastRPC user-space library (`libcdsprpc.so`) is now bundled inside the `-qualcomm` image, so you no longer bind-mount it from the host.
 
 ##### Step 1: FastRPC + firmware + group
 
@@ -504,12 +504,8 @@ volumes:
   # expected locations inside the container.
   - /usr/lib/dsp:/usr/lib/dsp:ro
   - /usr/lib/rfsa:/usr/lib/rfsa:ro
-  # libcdsprpc.so from the host fastrpc user-space package. The Frigate
-  # image does not bundle this; it is the user-space side of the FastRPC
-  # bridge to the cDSP and is provided by the host fastrpc package.
-  - /usr/lib/libcdsprpc.so:/usr/lib/libcdsprpc.so:ro
-  - /usr/lib/libcdsprpc.so.1:/usr/lib/libcdsprpc.so.1:ro
-  - /usr/lib/libcdsprpc.so.1.0.0:/usr/lib/libcdsprpc.so.1.0.0:ro
+  # NOTE: libcdsprpc.so (the FastRPC user-space side of the bridge to the cDSP)
+  # is now bundled inside the -qualcomm image, so it is no longer mounted here.
   # QAIRT runtime libraries (downloaded in Step 2 above). Adjust the version.
   - /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
   - /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
@@ -525,9 +521,6 @@ Or, with `docker run`:
 --device /dev/dma_heap/system \
 -v /usr/lib/dsp:/usr/lib/dsp:ro \
 -v /usr/lib/rfsa:/usr/lib/rfsa:ro \
--v /usr/lib/libcdsprpc.so:/usr/lib/libcdsprpc.so:ro \
--v /usr/lib/libcdsprpc.so.1:/usr/lib/libcdsprpc.so.1:ro \
--v /usr/lib/libcdsprpc.so.1.0.0:/usr/lib/libcdsprpc.so.1.0.0:ro \
 -v /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
 -v /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
 ```

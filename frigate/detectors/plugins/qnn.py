@@ -310,9 +310,11 @@ def doctor() -> int:
         "-v /usr/lib/rfsa:/usr/lib/rfsa:ro",
     )
     check(
-        "libcdsprpc.so present",
+        "libcdsprpc.so bundled in image",
         os.path.exists("/usr/lib/libcdsprpc.so"),
-        "mount the host fastrpc libcdsprpc.so",
+        "libcdsprpc.so ships inside the -qualcomm image and is no longer a "
+        "host mount; a FAIL means a broken/incomplete image — repull or "
+        "rebuild the -qualcomm image",
     )
     check(
         "ADSP_LIBRARY_PATH uses ';' separator",

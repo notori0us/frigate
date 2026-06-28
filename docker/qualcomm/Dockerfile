@@ -31,6 +31,15 @@ ARG QAI_APPBUILDER_COMMIT=942bc0d
 ARG QAIRT_SDK_VERSION=2.38.0.250901
 ARG QAIRT_SDK_URL=https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_SDK_VERSION}/v${QAIRT_SDK_VERSION}.zip
 
+# libcdsprpc.so (FastRPC user-space) — see the libcdsprpc stage below.
+# Sourced from radxa-pkg's prebuilt 'libcdsprpc1' .deb (the binary half of the
+# fastrpc package set). Upstream source is qualcomm/fastrpc (BSD-3-Clause), so
+# the library itself is safe to redistribute inside the published image. NOTE:
+# this is the 'libcdsprpc1' .deb, NOT the 'fastrpc' .deb — 'fastrpc' ships only
+# the cdsprpcd daemons plus a dangling unversioned .so symlink; the actual
+# libcdsprpc.so.1.0.0 binary lives in 'libcdsprpc1'.
+ARG LIBCDSPRPC_DEB_URL=https://github.com/radxa-pkg/fastrpc/releases/download/1.0.4-1/libcdsprpc1_1.0.4-1_arm64.deb
+
 FROM debian:12 AS wheel-builder
 ARG DEBIAN_FRONTEND
 ARG PIP_BREAK_SYSTEM_PACKAGES
@@ -70,6 +79,26 @@ ENV QNN_SDK_ROOT=/opt/qairt-sdk
 RUN python3 setup.py bdist_wheel
 
 # =============================================================================
+# libcdsprpc.so — FastRPC user-space, the CPU<->cDSP bridge half that runs
+# inside the container. Bundling it here means users no longer have to
+# bind-mount the three host /usr/lib/libcdsprpc.so* paths.
+#
+# The radxa 'libcdsprpc1' .deb ships the real binary (libcdsprpc.so.1.0.0) plus
+# the libcdsprpc.so.1 SONAME symlink, but NOT the unversioned libcdsprpc.so
+# dev symlink (that one lives in the separate 'fastrpc' .deb). We recreate the
+# unversioned symlink in the final stage so all three legacy mount paths exist
+# in-image. The binary links libyaml-0.so.2 and libbsd.so.0 — both installed
+# in the final stage.
+FROM debian:12 AS libcdsprpc
+ARG LIBCDSPRPC_DEB_URL
+# BuildKit's ADD fetches the URL over TLS without needing ca-certificates in
+# the image; dpkg-deb is part of the debian:12 base.
+ADD ${LIBCDSPRPC_DEB_URL} /tmp/libcdsprpc1.deb
+RUN dpkg-deb -x /tmp/libcdsprpc1.deb /tmp/cdsprpc \
+    && test -f /tmp/cdsprpc/usr/lib/libcdsprpc.so.1.0.0 \
+    && rm /tmp/libcdsprpc1.deb
+
+# =============================================================================
 FROM deps AS qualcomm-frigate
 ARG DEBIAN_FRONTEND
 ARG PIP_BREAK_SYSTEM_PACKAGES
@@ -79,17 +108,19 @@ ARG QAIRT_SDK_VERSION
 #   - libatomic1: qai_appbuilder dlopens libatomic.so.1 during QNN system init.
 #     If missing, the detector silently fails to initialize the QNN system
 #     function pointers and `Inference()` returns an empty list at runtime.
-#   - libyaml-0-2: libcdsprpc.so (mounted from the host at runtime) links
-#     against libyaml-0.so.2 for parsing fastrpc shell config.
+#   - libyaml-0-2 + libbsd0: the bundled libcdsprpc.so links libyaml-0.so.2
+#     (parses the fastrpc shell config) and libbsd.so.0. Without them the
+#     library fails to dlopen and the cDSP bridge never comes up.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libatomic1 libyaml-0-2 \
+    && apt-get install -y --no-install-recommends libatomic1 libyaml-0-2 libbsd0 \
     && rm -rf /var/lib/apt/lists/*
 
-# QAIRT runtime libs (libQnnHtp*.so etc.), the cDSP firmware, the fastrpc
-# user-space (libcdsprpc.so) — all live OUTSIDE this image and are mounted in
-# from the host at /opt/qairt, /usr/lib/dsp, /usr/lib/rfsa, and /usr/lib/.
-# Users download the QAIRT Community Edition SDK from Qualcomm (free, no
-# portal login). See docs/docs/frigate/installation.md for the full setup.
+# QAIRT runtime libs (libQnnHtp*.so etc.) and the cDSP firmware live OUTSIDE
+# this image and are mounted in from the host at /opt/qairt, /usr/lib/dsp, and
+# /usr/lib/rfsa. The fastrpc user-space (libcdsprpc.so*) IS bundled in this
+# image (see the COPY below). Users download the QAIRT Community Edition SDK
+# from Qualcomm (free, no portal login). See
+# docs/docs/frigate/installation.md for the full setup.
 COPY --from=wheel-builder /src/dist/qai_appbuilder-*.whl /tmp/
 # Install the wheel, then strip the proprietary Genie runtime (libGenie.so + the
 # geniebuilder/geniecontext bindings — all unused by detection) so the published
@@ -103,6 +134,17 @@ RUN pip3 install --no-cache-dir /tmp/qai_appbuilder-*.whl && rm /tmp/qai_appbuil
 
 WORKDIR /opt/frigate/
 COPY --from=rootfs / /
+
+# Bundle libcdsprpc.so* (FastRPC user-space; upstream qualcomm/fastrpc,
+# BSD-3-Clause) extracted from the radxa 'libcdsprpc1' .deb in the libcdsprpc
+# stage. Copy the real binary, then recreate the .so.1 SONAME and the
+# unversioned .so dev symlink so all three legacy host-mount paths resolve
+# in-image. Done after the rootfs overlay so nothing clobbers it; ldconfig
+# refreshes the linker cache.
+COPY --from=libcdsprpc /tmp/cdsprpc/usr/lib/libcdsprpc.so.1.0.0 /usr/lib/libcdsprpc.so.1.0.0
+RUN ln -sf libcdsprpc.so.1.0.0 /usr/lib/libcdsprpc.so.1 \
+    && ln -sf libcdsprpc.so.1.0.0 /usr/lib/libcdsprpc.so \
+    && ldconfig
 
 # fastrpc separator gotcha: ADSP_LIBRARY_PATH is split by ';' (semicolon),
 # not the usual ':'. libxdsprpc.so's apps_std_fopen_with_env uses ';' literally;
