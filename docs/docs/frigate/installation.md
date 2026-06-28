@@ -463,11 +463,21 @@ We provide a convenient script for Radxa Dragon Q6A and similar Debian/Armbian b
 3. Run it: `sudo ./user_installation.sh`
 4. Log out and back in so your user picks up the `fastrpc` group.
 
-The script installs the [`fastrpc`](https://github.com/radxa-pkg/fastrpc) user-space, the [`radxa-firmware-qcs6490`](https://github.com/radxa-pkg/radxa-firmware) firmware, disables the conflicting `hexagonrpcd` services, and starts a `cdsprpcd` systemd service. For non-Radxa QCS6490 boards, install your board vendor's equivalent FastRPC + cDSP firmware packages.
+The script installs the [`fastrpc`](https://github.com/radxa-pkg/fastrpc) user-space, the [`radxa-firmware-qcs6490`](https://github.com/radxa-pkg/radxa-firmware) firmware, disables the conflicting `hexagonrpcd` services, and starts a `cdsprpcd` systemd service. For non-Radxa QCS6490 boards, install your board vendor's equivalent FastRPC + cDSP firmware packages. It finishes by printing a `✅`/`❌` summary of every prerequisite (fastrpc, firmware, `cdsprpcd`, group membership, QAIRT).
 
-##### Step 2: Download the QAIRT SDK
+##### Step 2: Get the QAIRT SDK
 
-The QAIRT runtime libraries are proprietary Qualcomm and are distributed by Qualcomm directly. The **Community Edition** is freely downloadable, no portal login required:
+The QAIRT runtime libraries are proprietary Qualcomm and are distributed by Qualcomm directly. The **Community Edition** is freely downloadable, no portal login required.
+
+The easiest path is to let `user_installation.sh` fetch and unpack it for you. Because the SDK is proprietary, the download is gated behind explicit license acceptance — pass `--accept-qairt-license` (or type `accept` when prompted):
+
+```bash
+sudo ./user_installation.sh --fetch-qairt --accept-qairt-license
+```
+
+This pins the SDK version to the one the Frigate image was built against, downloads it into `/opt/qcom/qairt/<version>`, and is idempotent (it skips the ~1.4 GB download if that directory already exists). By accepting the license you agree to Qualcomm's SDK terms (shown at the download page and bundled as `LICENSE.pdf`).
+
+If you would rather download it yourself (or are on a non-Radxa board where you skip the script), do it manually:
 
 ```bash
 QAIRT_VERSION=2.38.0.250901
@@ -476,7 +486,7 @@ curl -A 'Mozilla/5.0' -L -o qairt.zip \
 sudo unzip -q qairt.zip -d /opt/qcom/
 ```
 
-The version must match the `qai_appbuilder` Python wheel built into the Frigate image — see the [Frigate image release notes](https://github.com/blakeblackshear/frigate/releases) for the matching QAIRT version.
+The version must match the `qai_appbuilder` Python wheel built into the Frigate image — see the [Frigate image release notes](https://github.com/blakeblackshear/frigate/releases) for the matching QAIRT version. The `--fetch-qairt` path handles this automatically by pinning the same version the script ships with.
 
 :::warning
 
