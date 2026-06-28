@@ -90,7 +90,15 @@ RUN apt-get update \
 # Users download the QAIRT Community Edition SDK from Qualcomm (free, no
 # portal login). See docs/docs/frigate/installation.md for the full setup.
 COPY --from=wheel-builder /src/dist/qai_appbuilder-*.whl /tmp/
-RUN pip3 install --no-cache-dir /tmp/qai_appbuilder-*.whl && rm /tmp/qai_appbuilder-*.whl
+# Install the wheel, then strip the proprietary Genie runtime (libGenie.so + the
+# geniebuilder/geniecontext bindings — all unused by detection) so the published
+# image carries no Qualcomm proprietary binaries. Locate the package without
+# importing it (import pulls Genie, which we're removing).
+RUN pip3 install --no-cache-dir /tmp/qai_appbuilder-*.whl && rm /tmp/qai_appbuilder-*.whl \
+    && QAID="$(python3 -c 'import importlib.util, os; print(os.path.dirname(importlib.util.find_spec("qai_appbuilder").origin))')" \
+    && rm -f "$QAID"/libGenie.so "$QAID"/geniebuilder*.so "$QAID"/geniecontext.py \
+    && sed -i '/[Gg]enie/d' "$QAID/__init__.py" \
+    && python3 -c "import qai_appbuilder; from qai_appbuilder import QNNContext"
 
 WORKDIR /opt/frigate/
 COPY --from=rootfs / /
