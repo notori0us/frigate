@@ -225,7 +225,7 @@ OK_FASTRPC=0
 OK_FIRMWARE=0
 [ -d /usr/lib/dsp/cdsp ] && [ -d /usr/lib/rfsa/adsp ] && OK_FIRMWARE=1
 OK_CDSPRPCD=0
-systemctl is-enabled cdsprpcd >/dev/null 2>&1 && OK_CDSPRPCD=1
+{ systemctl is-active cdsprpcd >/dev/null 2>&1 || systemctl is-enabled cdsprpcd >/dev/null 2>&1; } && OK_CDSPRPCD=1
 OK_GROUP=0
 if [ -n "${TARGET_USER}" ] && id -nG "${TARGET_USER}" 2>/dev/null | tr ' ' '\n' | grep -qx fastrpc; then
     OK_GROUP=1
@@ -235,7 +235,7 @@ OK_QAIRT=0
 
 status "fastrpc user-space (libcdsprpc.so)" "${OK_FASTRPC}" "install the fastrpc .deb"
 status "cDSP firmware (/usr/lib/dsp, /usr/lib/rfsa)" "${OK_FIRMWARE}" "install radxa-firmware-qcs6490"
-status "cdsprpcd service enabled" "${OK_CDSPRPCD}" "systemctl enable --now cdsprpcd"
+status "cdsprpcd service active/enabled" "${OK_CDSPRPCD}" "systemctl enable --now cdsprpcd (advisory: some boards run the cDSP without it)"
 status "user '${TARGET_USER}' in fastrpc group" "${OK_GROUP}" "log out/in to pick up the group"
 status "QAIRT ${QAIRT_VERSION} at ${QAIRT_LIBDIR}" "${OK_QAIRT}" "re-run with --fetch-qairt or download manually (installation.md Step 2)"
 
