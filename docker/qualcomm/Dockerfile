@@ -73,6 +73,7 @@ RUN python3 setup.py bdist_wheel
 FROM deps AS qualcomm-frigate
 ARG DEBIAN_FRONTEND
 ARG PIP_BREAK_SYSTEM_PACKAGES
+ARG QAIRT_SDK_VERSION
 
 # Runtime deps NOT in Frigate's base image:
 #   - libatomic1: qai_appbuilder dlopens libatomic.so.1 during QNN system init.
@@ -107,4 +108,5 @@ COPY --from=rootfs / /
 # not the usual ':'. libxdsprpc.so's apps_std_fopen_with_env uses ';' literally;
 # every cDSP skel lookup fails silently if you write ':' here.
 ENV ADSP_LIBRARY_PATH="/opt/qairt/hexagon-v68/unsigned;/usr/lib/dsp/cdsp;/usr/lib/rfsa/adsp" \
-    LD_LIBRARY_PATH="/opt/qairt/lib"
+    LD_LIBRARY_PATH="/opt/qairt/lib" \
+    FRIGATE_QNN_BUILD_QAIRT_VERSION="${QAIRT_SDK_VERSION}"
