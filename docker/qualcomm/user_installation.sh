@@ -6,12 +6,54 @@
 #   - Radxa firmware that ships the cDSP image + skel libs the QNN HTP
 #     backend dlopens at runtime
 #   - a transient cdsprpcd systemd service
+#   - (optionally, with --fetch-qairt) the QAIRT Community SDK runtime libs
 # and disables hexagonrpcd, which holds the fastrpc devices and conflicts.
 #
 # Run with sudo. Logs out + back in are required for the fastrpc group to
 # take effect for your user.
+#
+# Usage:
+#   sudo ./user_installation.sh [--fetch-qairt] [--accept-qairt-license]
+#
+#   --fetch-qairt             Also download + unpack the QAIRT Community SDK
+#                             to /opt/qcom/qairt/<version> (otherwise you must
+#                             download it manually — see installation.md Step 2).
+#   --accept-qairt-license    Pre-accept Qualcomm's SDK license non-interactively
+#                             (implies you have read and agree to the terms).
 
 set -euo pipefail
+
+# --- QAIRT version -----------------------------------------------------------
+# MUST match FRIGATE_QNN_BUILD_QAIRT_VERSION baked into the Frigate -qualcomm
+# image (docker/qualcomm/Dockerfile -> ARG QAIRT_SDK_VERSION). The QNN binary
+# ABI is locked per release; a mismatch makes Inference() silently return an
+# empty list at runtime. Bump this in lockstep with the Dockerfile.
+QAIRT_VERSION=2.38.0.250901
+QAIRT_BASE=/opt/qcom/qairt
+QAIRT_LIBDIR="${QAIRT_BASE}/${QAIRT_VERSION}/lib/aarch64-oe-linux-gcc11.2"
+QAIRT_URL="https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_VERSION}/v${QAIRT_VERSION}.zip"
+# Qualcomm presents the SDK license at the Software Center download page below;
+# the same terms ship as LICENSE.pdf inside the extracted SDK.
+QAIRT_LICENSE_URL="https://softwarecenter.qualcomm.com/#/catalog/item/Qualcomm_AI_Runtime_Community"
+
+# --- argument parsing --------------------------------------------------------
+FETCH_QAIRT=0
+ACCEPT_QAIRT_LICENSE=0
+for arg in "$@"; do
+    case "$arg" in
+        --fetch-qairt)           FETCH_QAIRT=1 ;;
+        --accept-qairt-license)  ACCEPT_QAIRT_LICENSE=1 ;;
+        -h|--help)
+            grep -E '^#( |$)' "$0" | sed -E 's/^# ?//'
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            echo "Usage: sudo $0 [--fetch-qairt] [--accept-qairt-license]" >&2
+            exit 1
+            ;;
+    esac
+done
 
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root (sudo $0)"
@@ -25,7 +67,7 @@ if [ "$ARCH" != "arm64" ]; then
 fi
 
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl
+apt-get install -y --no-install-recommends ca-certificates curl unzip
 
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "$WORKDIR"' EXIT
@@ -105,6 +147,98 @@ if [ -n "${TARGET_USER}" ] && id "${TARGET_USER}" >/dev/null 2>&1; then
     usermod -aG fastrpc "${TARGET_USER}"
 fi
 
+# --- QAIRT Community SDK (optional, --fetch-qairt) ---------------------------
+# USER-RUN ONLY. This must never be invoked from inside a container: the human
+# operator is the one accepting Qualcomm's license terms, which keeps the legal
+# agency with the person, not the image. Idempotent and gated behind explicit
+# consent.
+fetch_qairt() {
+    echo "==> QAIRT Community SDK ${QAIRT_VERSION}"
+
+    # Idempotency: if the runtime lib dir already exists, there is nothing to do.
+    if [ -d "${QAIRT_LIBDIR}" ]; then
+        echo "    Already present at ${QAIRT_LIBDIR} — skipping download."
+        return 0
+    fi
+
+    # Explicit consent gate. Either --accept-qairt-license was passed, or the
+    # user must type 'accept' at the prompt. Anything else refuses the download.
+    if [ "${ACCEPT_QAIRT_LICENSE}" -ne 1 ]; then
+        echo
+        echo "    The QAIRT Community SDK is proprietary Qualcomm software."
+        echo "    By downloading it you agree to Qualcomm's license terms:"
+        echo "      ${QAIRT_LICENSE_URL}"
+        echo "    (the same terms ship as LICENSE.pdf inside the SDK)."
+        echo
+        if [ ! -t 0 ]; then
+            echo "    No TTY and --accept-qairt-license not passed; refusing to download." >&2
+            echo "    Re-run with --accept-qairt-license to consent non-interactively." >&2
+            return 1
+        fi
+        printf "    Type 'accept' to agree and download, anything else to skip: "
+        read -r reply
+        if [ "${reply}" != "accept" ]; then
+            echo "    License not accepted — skipping QAIRT download."
+            return 1
+        fi
+    else
+        echo "    License pre-accepted via --accept-qairt-license."
+    fi
+
+    echo "    Downloading (~1.4 GB) from ${QAIRT_URL}"
+    # softwarecenter.qualcomm.com 403s requests without a browser UA.
+    curl -fSL -A 'Mozilla/5.0' -o "${WORKDIR}/qairt.zip" "${QAIRT_URL}"
+
+    echo "    Unpacking to ${QAIRT_BASE%/qairt}/"
+    mkdir -p "${QAIRT_BASE%/qairt}"
+    # The zip already contains qairt/<version>/..., so extract into /opt/qcom/.
+    unzip -q -o "${WORKDIR}/qairt.zip" -d "${QAIRT_BASE%/qairt}/"
+    rm -f "${WORKDIR}/qairt.zip"
+
+    if [ ! -d "${QAIRT_LIBDIR}" ]; then
+        echo "    ERROR: expected lib dir not found after unpack: ${QAIRT_LIBDIR}" >&2
+        return 1
+    fi
+    echo "    QAIRT ${QAIRT_VERSION} ready at ${QAIRT_LIBDIR}"
+}
+
+if [ "${FETCH_QAIRT}" -eq 1 ]; then
+    # Don't abort the whole run if the user declines the license; the summary
+    # below will report QAIRT as missing.
+    fetch_qairt || true
+fi
+
+# --- prerequisite summary ----------------------------------------------------
+echo
+echo "Prerequisite summary:"
+status() {
+    # $1 = label, $2 = 0/1 ok flag, $3 = remediation hint when missing
+    if [ "$2" -eq 1 ]; then
+        echo "  ✅ $1"
+    else
+        echo "  ❌ $1 — $3"
+    fi
+}
+
+OK_FASTRPC=0
+[ -e /usr/lib/libcdsprpc.so ] && OK_FASTRPC=1
+OK_FIRMWARE=0
+[ -d /usr/lib/dsp/cdsp ] && [ -d /usr/lib/rfsa/adsp ] && OK_FIRMWARE=1
+OK_CDSPRPCD=0
+systemctl is-enabled cdsprpcd >/dev/null 2>&1 && OK_CDSPRPCD=1
+OK_GROUP=0
+if [ -n "${TARGET_USER}" ] && id -nG "${TARGET_USER}" 2>/dev/null | tr ' ' '\n' | grep -qx fastrpc; then
+    OK_GROUP=1
+fi
+OK_QAIRT=0
+[ -d "${QAIRT_LIBDIR}" ] && OK_QAIRT=1
+
+status "fastrpc user-space (libcdsprpc.so)" "${OK_FASTRPC}" "install the fastrpc .deb"
+status "cDSP firmware (/usr/lib/dsp, /usr/lib/rfsa)" "${OK_FIRMWARE}" "install radxa-firmware-qcs6490"
+status "cdsprpcd service enabled" "${OK_CDSPRPCD}" "systemctl enable --now cdsprpcd"
+status "user '${TARGET_USER}' in fastrpc group" "${OK_GROUP}" "log out/in to pick up the group"
+status "QAIRT ${QAIRT_VERSION} at ${QAIRT_LIBDIR}" "${OK_QAIRT}" "re-run with --fetch-qairt or download manually (installation.md Step 2)"
+
 echo
 echo "Hexagon NPU host setup complete."
 echo "Log out and back in for fastrpc group membership to take effect, then:"
@@ -114,12 +248,16 @@ echo "  --device /dev/fastrpc-cdsp --device /dev/fastrpc-cdsp-secure"
 echo "  --device /dev/fastrpc-adsp --device /dev/dma_heap/system"
 echo "  --group-add \$(getent group fastrpc | cut -d: -f3)"
 echo "  -v /usr/lib/dsp:/usr/lib/dsp:ro -v /usr/lib/rfsa:/usr/lib/rfsa:ro"
-echo "  -v /opt/qcom/qairt/<version>/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro"
-echo "  -v /opt/qcom/qairt/<version>/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro"
+echo "  -v ${QAIRT_BASE}/${QAIRT_VERSION}/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro"
+echo "  -v ${QAIRT_BASE}/${QAIRT_VERSION}/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro"
 echo
-echo "Download QAIRT Community Edition (free, no portal login):"
-echo "  https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/<version>/v<version>.zip"
-echo
+if [ "${OK_QAIRT}" -ne 1 ]; then
+    echo "QAIRT not yet present. Either re-run with --fetch-qairt, or download"
+    echo "the Community Edition (free, no portal login) manually:"
+    echo "  ${QAIRT_URL}"
+    echo "  (unzip into /opt/qcom/)"
+    echo
+fi
 echo "If detection ever stops working (Frigate logs show 'IndexError' from"
 echo "qnn.py or 'Failed to create transport for device, error: 4000'), the"
 echo "cDSP is in a stuck state. Reset with:"
