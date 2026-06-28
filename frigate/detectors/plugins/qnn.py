@@ -1,6 +1,7 @@
 import atexit
 import logging
 import os
+import re
 from typing import Literal
 
 import cv2
@@ -30,6 +31,32 @@ logger = logging.getLogger(__name__)
 DETECTOR_KEY = "qnn"
 DEFAULT_QNN_LIB_DIR = "/opt/qairt/lib"
 MAX_DETECTIONS = 20
+
+# QAIRT version this image's qai_appbuilder was built against (baked by the
+# Dockerfile from QAIRT_SDK_VERSION). The host-mounted QAIRT runtime must match
+# this minor version or QNN init fails silently (transport error 4000).
+BUILD_QAIRT_VERSION = os.environ.get("FRIGATE_QNN_BUILD_QAIRT_VERSION", "")
+
+
+def _runtime_qairt_version(lib_dir: str) -> str | None:
+    """Best-effort host QAIRT version, read from the mounted libQnnHtp.so (it
+    embeds e.g. ``v2.38.0.250901140452``). Returns ``major.minor.patch.date`` or
+    None if it can't be determined."""
+    try:
+        with open(os.path.join(lib_dir, "libQnnHtp.so"), "rb") as f:
+            blob = f.read()
+    except OSError:
+        return None
+    m = re.search(rb"(\d+\.\d+\.\d+)\.(\d{6})\d*", blob)
+    return f"{m.group(1).decode()}.{m.group(2).decode()}" if m else None
+
+
+def _qairt_mismatch(build: str, runtime: str | None) -> bool:
+    """True only when both versions are known and differ in major.minor.patch
+    (the ABI-relevant part). The build-date suffix is ignored."""
+    if not build or not runtime:
+        return False
+    return runtime.split(".")[:3] != build.split(".")[:3]
 
 
 def _release(ctx) -> None:
@@ -91,6 +118,32 @@ class QnnDetector(DetectionApi):
         self._soc_id = detector_config.soc_id
         self._conf = detector_config.conf_threshold
         self._iou = detector_config.iou_threshold
+        # _wedged: when set, detect_raw returns zeros without touching the NPU.
+        # Used here for a fatal setup error and in detect_raw for a runtime cDSP
+        # wedge. We degrade rather than crash: a crashing detector subprocess
+        # triggers Frigate's watchdog → restart → stranded fastrpc fds →
+        # eventual kernel fault on Linux 6.18.
+        self._wedged = False
+        self._ctx = None
+
+        # Fail loud on a host/image QAIRT ABI mismatch instead of silently
+        # returning zero detections (transport error 4000).
+        runtime_qairt = _runtime_qairt_version(detector_config.qnn_lib_dir)
+        if _qairt_mismatch(BUILD_QAIRT_VERSION, runtime_qairt):
+            logger.error(
+                "QAIRT version mismatch: this image's qai_appbuilder was built "
+                "against QAIRT %s, but the host runtime mounted at %s is %s — "
+                "these are ABI-incompatible and inference would silently return "
+                "zero detections. Mount the matching QAIRT %s runtime (see "
+                "docs/frigate/installation#qualcomm-platform). Detection "
+                "disabled in this detector subprocess.",
+                BUILD_QAIRT_VERSION,
+                detector_config.qnn_lib_dir,
+                runtime_qairt,
+                BUILD_QAIRT_VERSION,
+            )
+            self._wedged = True
+            return
 
         # LogLevel.ERROR (not WARN): QAIRT emits a WARN-level
         # "Time: model_inference yolo Nms" line on every inference, so WARN
@@ -112,11 +165,6 @@ class QnnDetector(DetectionApi):
         # can drop the reference without preventing GC.
         ctx_ref = self._ctx
         atexit.register(lambda: setattr(self, "_ctx", None) or _release(ctx_ref))
-        # _wedged is set when an inference returns an unexpected shape,
-        # which on Hexagon NPU means the cDSP session is in a bad state.
-        # We then return zeros forever (rather than crashing → watchdog
-        # restart → more stranded fastrpc fds → eventual kernel fault).
-        self._wedged = False
         logger.info(
             "QNN detector loaded model=%s size=%d soc=%s",
             model_path,
@@ -204,3 +252,84 @@ class QnnDetector(DetectionApi):
                 float(np.clip(x2 / size, 0.0, 1.0)),
             )
         return out
+
+
+def doctor() -> int:
+    """Preflight self-check for the Qualcomm Hexagon runtime. Run it inside the
+    container::
+
+        docker exec <frigate> python3 -m frigate.detectors.plugins.qnn
+
+    Prints PASS/FAIL for each prerequisite and exits non-zero if a required
+    piece is missing — turns the otherwise-silent setup failures (wrong mount,
+    wrong QAIRT version, ``:`` vs ``;`` separator) into a checklist."""
+    lib_dir = os.environ.get("QNN_LIB_DIR", DEFAULT_QNN_LIB_DIR)
+    ok = True
+
+    def check(label: str, cond: bool, fix: str = "") -> None:
+        nonlocal ok
+        ok = ok and bool(cond)
+        line = f"[{'PASS' if cond else 'FAIL'}] {label}"
+        if not cond and fix:
+            line += f"\n         fix: {fix}"
+        print(line)
+
+    print("== Frigate Qualcomm Hexagon NPU preflight ==")
+    print(f"   image built against QAIRT {BUILD_QAIRT_VERSION or '(unknown)'}")
+    check("qai_appbuilder importable", QNN_SUPPORT, "use the -qualcomm image variant")
+    for dev in (
+        "/dev/fastrpc-cdsp",
+        "/dev/fastrpc-cdsp-secure",
+        "/dev/fastrpc-adsp",
+        "/dev/dma_heap/system",
+    ):
+        check(f"device {dev}", os.path.exists(dev), f"add '{dev}' to compose devices:")
+    check(
+        "fastrpc device read/write access",
+        os.access("/dev/fastrpc-cdsp", os.R_OK | os.W_OK),
+        "add group_add with the host's fastrpc GID (getent group fastrpc)",
+    )
+    check(
+        f"QAIRT host libs at {lib_dir}/libQnnHtp.so",
+        os.path.exists(os.path.join(lib_dir, "libQnnHtp.so")),
+        "mount QAIRT lib/aarch64-oe-linux-gcc11.2 -> /opt/qairt/lib",
+    )
+    check(
+        "Hexagon v68 skel mounted",
+        os.path.exists("/opt/qairt/hexagon-v68/unsigned/libQnnHtpV68Skel.so"),
+        "mount QAIRT lib/hexagon-v68 -> /opt/qairt/hexagon-v68",
+    )
+    check(
+        "cDSP firmware /usr/lib/dsp/cdsp mounted",
+        os.path.isdir("/usr/lib/dsp/cdsp"),
+        "-v /usr/lib/dsp:/usr/lib/dsp:ro",
+    )
+    check(
+        "/usr/lib/rfsa/adsp mounted",
+        os.path.isdir("/usr/lib/rfsa/adsp"),
+        "-v /usr/lib/rfsa:/usr/lib/rfsa:ro",
+    )
+    check(
+        "libcdsprpc.so present",
+        os.path.exists("/usr/lib/libcdsprpc.so"),
+        "mount the host fastrpc libcdsprpc.so",
+    )
+    check(
+        "ADSP_LIBRARY_PATH uses ';' separator",
+        ";" in os.environ.get("ADSP_LIBRARY_PATH", ""),
+        "use ';' not ':' — libxdsprpc splits ADSP_LIBRARY_PATH on ';'",
+    )
+    runtime_qairt = _runtime_qairt_version(lib_dir)
+    check(
+        f"QAIRT version match (host {runtime_qairt or '?'})",
+        not _qairt_mismatch(BUILD_QAIRT_VERSION, runtime_qairt),
+        f"mount QAIRT {BUILD_QAIRT_VERSION} — host/image minor versions must match",
+    )
+    print("== " + ("ALL CHECKS PASSED" if ok else "CHECKS FAILED — see fixes above") + " ==")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(doctor())

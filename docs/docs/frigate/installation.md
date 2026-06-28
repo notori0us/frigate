@@ -470,7 +470,7 @@ The script installs the [`fastrpc`](https://github.com/radxa-pkg/fastrpc) user-s
 The QAIRT runtime libraries are proprietary Qualcomm and are distributed by Qualcomm directly. The **Community Edition** is freely downloadable, no portal login required:
 
 ```bash
-QAIRT_VERSION=2.40.0.251030
+QAIRT_VERSION=2.38.0.250901
 curl -A 'Mozilla/5.0' -L -o qairt.zip \
   "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_VERSION}/v${QAIRT_VERSION}.zip"
 sudo unzip -q qairt.zip -d /opt/qcom/
@@ -511,8 +511,8 @@ volumes:
   - /usr/lib/libcdsprpc.so.1:/usr/lib/libcdsprpc.so.1:ro
   - /usr/lib/libcdsprpc.so.1.0.0:/usr/lib/libcdsprpc.so.1.0.0:ro
   # QAIRT runtime libraries (downloaded in Step 2 above). Adjust the version.
-  - /opt/qcom/qairt/2.40.0.251030/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
-  - /opt/qcom/qairt/2.40.0.251030/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
+  - /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
+  - /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
 ```
 
 Or, with `docker run`:
@@ -528,9 +528,19 @@ Or, with `docker run`:
 -v /usr/lib/libcdsprpc.so:/usr/lib/libcdsprpc.so:ro \
 -v /usr/lib/libcdsprpc.so.1:/usr/lib/libcdsprpc.so.1:ro \
 -v /usr/lib/libcdsprpc.so.1.0.0:/usr/lib/libcdsprpc.so.1.0.0:ro \
--v /opt/qcom/qairt/2.40.0.251030/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
--v /opt/qcom/qairt/2.40.0.251030/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
+-v /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
+-v /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
 ```
+
+#### Verify the setup
+
+Before starting Frigate, run the preflight check with the same devices and mounts as your service. It validates every bind-mount, the fastrpc group access, the `ADSP_LIBRARY_PATH` separator, and that the host QAIRT version matches the one the image was built against — each prerequisite reports `[PASS]` or `[FAIL]` with the exact fix:
+
+```bash
+docker compose run --rm --entrypoint python3 frigate -m frigate.detectors.plugins.qnn
+```
+
+The detector also performs the QAIRT version check automatically at startup and logs a clear error naming both versions if they differ, instead of silently returning zero detections.
 
 #### Configuration
 
