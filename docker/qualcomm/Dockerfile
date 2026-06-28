@@ -146,6 +146,10 @@ RUN ln -sf libcdsprpc.so.1.0.0 /usr/lib/libcdsprpc.so.1 \
     && ln -sf libcdsprpc.so.1.0.0 /usr/lib/libcdsprpc.so \
     && ldconfig
 
+# Ship libcdsprpc's BSD-3-Clause license/attribution with the bundled binary
+# (the radxa deb carries only its GPL-3 packaging copyright, not the BSD-3 text).
+COPY docker/qualcomm/licenses/libcdsprpc.LICENSE /usr/share/doc/libcdsprpc/copyright
+
 # fastrpc separator gotcha: ADSP_LIBRARY_PATH is split by ';' (semicolon),
 # not the usual ':'. libxdsprpc.so's apps_std_fopen_with_env uses ';' literally;
 # every cDSP skel lookup fails silently if you write ':' here.
