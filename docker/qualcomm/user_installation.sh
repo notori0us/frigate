@@ -26,8 +26,10 @@ set -euo pipefail
 # --- QAIRT version -----------------------------------------------------------
 # MUST match FRIGATE_QNN_BUILD_QAIRT_VERSION baked into the Frigate -qualcomm
 # image (docker/qualcomm/Dockerfile -> ARG QAIRT_SDK_VERSION). The QNN binary
-# ABI is locked per release; a mismatch makes Inference() silently return an
-# empty list at runtime. Bump this in lockstep with the Dockerfile.
+# ABI is locked per release. The detector reads the host QAIRT version at init
+# and, on a major.minor.patch mismatch, logs a loud error naming both versions
+# and disables itself (returns zeros) rather than failing silently. Keep this in
+# lockstep with the Dockerfile; the runtime assertion is the backstop.
 QAIRT_VERSION=2.45.40.260406
 QAIRT_BASE=/opt/qcom/qairt
 QAIRT_LIBDIR="${QAIRT_BASE}/${QAIRT_VERSION}/lib/aarch64-oe-linux-gcc11.2"

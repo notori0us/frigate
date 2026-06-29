@@ -7,7 +7,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG PIP_BREAK_SYSTEM_PACKAGES=1
 
 # ============================================================================
-# !!! TEMPORARY — remove once upstream ships a cp311 Linux aarch64 wheel !!!
+# !!! TEMPORARY: remove once upstream ships a cp311 Linux aarch64 wheel !!!
 #
 # qai_appbuilder publishes Linux aarch64 wheels for cp310, cp312, cp313 on
 # PyPI but not cp311, which is what Frigate's Debian 12 base runs. Tracked
@@ -15,7 +15,7 @@ ARG PIP_BREAK_SYSTEM_PACKAGES=1
 #
 # Until that lands, we build the cp311 wheel from source inside this image.
 # Building here (rather than pulling a pre-built wheel from a side repo) also
-# guarantees the wheel's libstdc++/glibc ABI matches the runtime stage — a
+# guarantees the wheel's libstdc++/glibc ABI matches the runtime stage. A
 # wheel compiled on a newer GCC fails at dlopen with
 # `version GLIBCXX_3.4.32 not found`.
 #
@@ -25,25 +25,22 @@ ARG PIP_BREAK_SYSTEM_PACKAGES=1
 #   RUN pip3 install --no-cache-dir "qai-appbuilder==<version>"
 # ============================================================================
 
-# Pinned to a known-working commit on quic/ai-engine-direct-helper.
-ARG QAI_APPBUILDER_COMMIT=942bc0d
-# Qualcomm AI Runtime Community Edition — free, no portal login.
+# Pinned to upstream release tag v2.37.1 (commit 942bc0d), known-working on QCS6490.
+ARG QAI_APPBUILDER_REF=v2.37.1
+# Qualcomm AI Runtime Community Edition (free, no portal login).
 ARG QAIRT_SDK_VERSION=2.45.40.260406
 ARG QAIRT_SDK_URL=https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_SDK_VERSION}/v${QAIRT_SDK_VERSION}.zip
 
-# libcdsprpc.so (FastRPC user-space) — see the libcdsprpc stage below.
-# Sourced from radxa-pkg's prebuilt 'libcdsprpc1' .deb (the binary half of the
-# fastrpc package set). Upstream source is qualcomm/fastrpc (BSD-3-Clause), so
-# the library itself is safe to redistribute inside the published image. NOTE:
-# this is the 'libcdsprpc1' .deb, NOT the 'fastrpc' .deb — 'fastrpc' ships only
-# the cdsprpcd daemons plus a dangling unversioned .so symlink; the actual
-# libcdsprpc.so.1.0.0 binary lives in 'libcdsprpc1'.
+# libcdsprpc.so (FastRPC user-space; qualcomm/fastrpc, BSD-3-Clause). Bundled
+# so users no longer bind-mount the host libcdsprpc.so* paths. Pulled from the
+# radxa 'libcdsprpc1' .deb (the actual binary), NOT 'fastrpc' (daemons only).
+# Full rationale at the libcdsprpc build stage below.
 ARG LIBCDSPRPC_DEB_URL=https://github.com/radxa-pkg/fastrpc/releases/download/1.0.4-1/libcdsprpc1_1.0.4-1_arm64.deb
 
 FROM debian:12 AS wheel-builder
 ARG DEBIAN_FRONTEND
 ARG PIP_BREAK_SYSTEM_PACKAGES
-ARG QAI_APPBUILDER_COMMIT
+ARG QAI_APPBUILDER_REF
 ARG QAIRT_SDK_VERSION
 ARG QAIRT_SDK_URL
 
@@ -54,12 +51,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip3 install --no-cache-dir pybind11
 
-# Fetch source. Only the pybind11 submodule is needed for the build — the
+# Fetch source. Only the pybind11 submodule is needed for the build; the
 # other submodules under samples/ are unused and some have broken refs on
 # older commits.
 RUN git clone https://github.com/quic/ai-engine-direct-helper.git /src
 WORKDIR /src
-RUN git checkout ${QAI_APPBUILDER_COMMIT} && git submodule update --init pybind/pybind11
+RUN git checkout ${QAI_APPBUILDER_REF} && git submodule update --init pybind/pybind11
 
 # Fetch QAIRT SDK and extract only the headers + libGenie.so we need
 # (9 MB vs 1.4 GB for the full SDK).
@@ -79,7 +76,7 @@ ENV QNN_SDK_ROOT=/opt/qairt-sdk
 RUN python3 setup.py bdist_wheel
 
 # =============================================================================
-# libcdsprpc.so — FastRPC user-space, the CPU<->cDSP bridge half that runs
+# libcdsprpc.so: FastRPC user-space, the CPU<->cDSP bridge half that runs
 # inside the container. Bundling it here means users no longer have to
 # bind-mount the three host /usr/lib/libcdsprpc.so* paths.
 #
@@ -87,7 +84,7 @@ RUN python3 setup.py bdist_wheel
 # the libcdsprpc.so.1 SONAME symlink, but NOT the unversioned libcdsprpc.so
 # dev symlink (that one lives in the separate 'fastrpc' .deb). We recreate the
 # unversioned symlink in the final stage so all three legacy mount paths exist
-# in-image. The binary links libyaml-0.so.2 and libbsd.so.0 — both installed
+# in-image. The binary links libyaml-0.so.2 and libbsd.so.0, both installed
 # in the final stage.
 FROM debian:12 AS libcdsprpc
 ARG LIBCDSPRPC_DEB_URL
@@ -123,7 +120,7 @@ RUN apt-get update \
 # docs/docs/frigate/installation.md for the full setup.
 COPY --from=wheel-builder /src/dist/qai_appbuilder-*.whl /tmp/
 # Install the wheel, then strip the proprietary Genie runtime (libGenie.so + the
-# geniebuilder/geniecontext bindings — all unused by detection) so the published
+# geniebuilder/geniecontext bindings, all unused by detection) so the published
 # image carries no Qualcomm proprietary binaries. Locate the package without
 # importing it (import pulls Genie, which we're removing).
 RUN pip3 install --no-cache-dir /tmp/qai_appbuilder-*.whl && rm /tmp/qai_appbuilder-*.whl \

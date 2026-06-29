@@ -759,9 +759,11 @@ Explanation of the paramters:
 
 Hardware accelerated object detection is supported on the following Qualcomm SoCs:
 
-- QCS6490 (Hexagon v68, ~12 TOPS) — including the [Radxa Dragon Q6A](https://radxa.com/products/dragon/q6a/) and similar boards
+- QCS6490 (Hexagon v68)
 
-This implementation uses the [Qualcomm AI Runtime (QAIRT) SDK](https://www.qualcomm.com/developer/software/qualcomm-ai-runtime-sdk) via the open-source [`qai_appbuilder`](https://github.com/quic/ai-engine-direct-helper) Python bindings (BSD-3). The QAIRT runtime libraries are mounted from the host at `/opt/qairt` — they are not bundled in the Frigate image. Models are QNN context binaries (`.bin`) you compile for your SoC with [Qualcomm AI Hub](https://aihub.qualcomm.com/) — see [Getting the model](#getting-the-model).
+So far this has only been tested on the [Radxa Dragon Q6A](https://radxa.com/products/dragon/q6a/).
+
+This implementation uses the [Qualcomm AI Runtime (QAIRT) SDK](https://www.qualcomm.com/developer/software/qualcomm-ai-runtime-sdk) via the open-source [`qai_appbuilder`](https://github.com/quic/ai-engine-direct-helper) Python bindings (BSD-3). The QAIRT runtime libraries are mounted from the host at `/opt/qairt` and are not bundled in the Frigate image. Models are QNN context binaries (`.bin`) you compile for your SoC with [Qualcomm AI Hub](https://aihub.qualcomm.com/). See [Getting the model](#getting-the-model).
 
 :::warning
 
@@ -775,10 +777,10 @@ Make sure to follow the [Qualcomm specific installation instructions](/frigate/i
 
 ### Getting the model
 
-Frigate does not bundle the YOLOv8 weights. Compile a QNN context binary for the QCS6490 from [Qualcomm AI Hub](https://aihub.qualcomm.com/) with the [`qai-hub-models`](https://github.com/quic/ai-hub-models) exporter (a free AI Hub account + API token are required; the export runs as cloud jobs). The QCS6490's Hexagon v68 has no FP16, so the model **must** be quantized — use `w8a8`:
+Frigate does not bundle the YOLOv8 weights. Compile a QNN context binary for the QCS6490 from [Qualcomm AI Hub](https://aihub.qualcomm.com/) using the [`qai-hub-models`](https://github.com/quic/ai-hub-models) exporter. A free AI Hub account and API token are required, and the export runs as a cloud job. The QCS6490's Hexagon v68 has no FP16, so the model must be quantized to `w8a8`:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate      # Python 3.10–3.12
+python -m venv .venv && source .venv/bin/activate      # Python 3.10-3.12
 pip install "qai-hub-models[yolov8-det]"
 qai-hub configure --api_token <YOUR_TOKEN>             # token at https://app.aihub.qualcomm.com/account/
 
@@ -793,11 +795,11 @@ mkdir -p ./models
 cp ./export_out/*/*.bin ./models/yolov8_det.bin
 ```
 
-Mount `./models` into the container at `/models` and reference the file from your config. The COCO-80 label map (`/labelmap/coco-80.txt`, referenced below) ships **inside** the `-qualcomm` image — you do not need to download or create it.
+Mount `./models` into the container at `/models` and reference the file from your config. The COCO-80 label map (`/labelmap/coco-80.txt`, referenced below) ships **inside** the `-qualcomm` image. You do not need to download or create it.
 
 :::note
 
-AI Hub compiles context binaries with QAIRT 2.45+, matching the QAIRT version this image is built against. The model and the image's runtime must share a compatible QAIRT version — see the [version-match note](/frigate/installation#qualcomm-platform).
+AI Hub compiles context binaries with QAIRT 2.45+, matching the QAIRT version this image is built against. The model and the image's runtime must share a compatible QAIRT version. See the [version-match note](/frigate/installation#qualcomm-platform).
 
 :::
 
@@ -847,11 +849,11 @@ cameras:
 </TabItem>
 </ConfigTabs>
 
-The inference time on a Radxa Dragon Q6A (QCS6490, Hexagon v68) is approximately 10–25 ms per frame at 640×640 — varying with system load and the number of cameras pumping frames into the detector.
+The inference time on a Radxa Dragon Q6A (QCS6490, Hexagon v68) is approximately 10-25 ms per frame at 640x640, depending on system load and the number of active cameras.
 
 ### Compiling a different model or SoC
 
-The command above produces the stock YOLOv8n. To export a different checkpoint, or YOLOv8 for a Qualcomm SoC other than QCS6490, adjust the export arguments — pass a different `--chipset` (browse the available targets at [Qualcomm AI Hub](https://aihub.qualcomm.com/)) and/or a custom `--checkpoint`. Keep `--quantize w8a8` for Hexagon targets without FP16.
+The command above produces the stock YOLOv8n. To export a different checkpoint, or YOLOv8 for a Qualcomm SoC other than QCS6490, adjust the export arguments: pass a different `--chipset` (browse the available targets at [Qualcomm AI Hub](https://aihub.qualcomm.com/)) and/or a custom `--checkpoint`. Keep `--quantize w8a8` for Hexagon targets without FP16.
 
 The output-tensor ordering of YOLOv8 differs by SoC: QCS6490 yields `[scores, classes, boxes]` (handled by `soc_id: "6490"`); other SoCs yield `[boxes, scores, classes]` (use `soc_id: "other"`).
 
