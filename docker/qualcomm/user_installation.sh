@@ -28,7 +28,7 @@ set -euo pipefail
 # image (docker/qualcomm/Dockerfile -> ARG QAIRT_SDK_VERSION). The QNN binary
 # ABI is locked per release; a mismatch makes Inference() silently return an
 # empty list at runtime. Bump this in lockstep with the Dockerfile.
-QAIRT_VERSION=2.38.0.250901
+QAIRT_VERSION=2.45.40.260406
 QAIRT_BASE=/opt/qcom/qairt
 QAIRT_LIBDIR="${QAIRT_BASE}/${QAIRT_VERSION}/lib/aarch64-oe-linux-gcc11.2"
 QAIRT_URL="https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_VERSION}/v${QAIRT_VERSION}.zip"

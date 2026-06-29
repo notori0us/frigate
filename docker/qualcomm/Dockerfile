@@ -28,7 +28,7 @@ ARG PIP_BREAK_SYSTEM_PACKAGES=1
 # Pinned to a known-working commit on quic/ai-engine-direct-helper.
 ARG QAI_APPBUILDER_COMMIT=942bc0d
 # Qualcomm AI Runtime Community Edition — free, no portal login.
-ARG QAIRT_SDK_VERSION=2.38.0.250901
+ARG QAIRT_SDK_VERSION=2.45.40.260406
 ARG QAIRT_SDK_URL=https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_SDK_VERSION}/v${QAIRT_SDK_VERSION}.zip
 
 # libcdsprpc.so (FastRPC user-space) — see the libcdsprpc stage below.
