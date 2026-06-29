@@ -519,6 +519,9 @@ volumes:
   # QAIRT runtime libraries (downloaded in Step 2 above). Adjust the version.
   - /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
   - /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
+  # your downloaded model directory (holds yolov8_det.bin) — see the detector
+  # config at /configuration/object_detectors#qualcomm-hexagon-npu
+  - ./models:/models:ro
 ```
 
 Or, with `docker run`:
@@ -532,7 +535,8 @@ Or, with `docker run`:
 -v /usr/lib/dsp:/usr/lib/dsp:ro \
 -v /usr/lib/rfsa:/usr/lib/rfsa:ro \
 -v /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
--v /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
+-v /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro \
+-v ./models:/models:ro
 ```
 
 #### Verify the setup

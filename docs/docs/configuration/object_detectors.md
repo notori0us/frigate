@@ -784,7 +784,7 @@ mkdir -p ./models
 mv ~/Downloads/yolov8_det.bin ./models/
 ```
 
-Mount `./models` into the container at `/models` and reference the file from your config.
+Mount `./models` into the container at `/models` and reference the file from your config. The COCO-80 label map (`/labelmap/coco-80.txt`, referenced below) ships **inside** the `-qualcomm` image — you do not need to download or create it.
 
 ### Configuration
 

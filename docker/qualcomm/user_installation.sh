@@ -73,21 +73,41 @@ WORKDIR=$(mktemp -d)
 trap 'rm -rf "$WORKDIR"' EXIT
 
 # fastrpc user-space (provides libcdsprpc.so + cdsprpcd). Not in apt.
+# NB: the diagnostic package is 'fastrpc-test' (ships fastrpc_test); there is no
+# 'fastrpc-tools' release asset — using that name 404s and aborts the install.
 FASTRPC_VER=1.0.4-1
 echo "==> Installing fastrpc ${FASTRPC_VER}"
-for pkg in fastrpc fastrpc-tools; do
+for pkg in fastrpc fastrpc-test; do
     curl -fsSL -o "${WORKDIR}/${pkg}.deb" \
         "https://github.com/radxa-pkg/fastrpc/releases/download/${FASTRPC_VER}/${pkg}_${FASTRPC_VER}_arm64.deb"
 done
-apt-get install -y "${WORKDIR}/fastrpc.deb" "${WORKDIR}/fastrpc-tools.deb"
+apt-get install -y "${WORKDIR}/fastrpc.deb" "${WORKDIR}/fastrpc-test.deb"
 
 # Radxa QCS6490 firmware (provides /usr/lib/dsp/cdsp/{cdsp.mbn,*_skel.so,...}
-# and /usr/lib/rfsa/adsp/, both required by the cDSP at runtime).
+# and /usr/lib/rfsa/adsp/, both required by the cDSP at runtime). Many QCS6490
+# BSP/vendor images already ship this firmware (owned by no dpkg package), in
+# which case the package is unnecessary — so skip it when the dirs are present.
+# We also tolerate an install failure (e.g. the radxa-firmware-qcs6490 dependency
+# firmware-qcom-hlosfw not being available from your configured apt sources)
+# rather than aborting before the prerequisite summary, which reports whether the
+# firmware actually ended up present.
 RADXA_FW_VER=0.2.29
-echo "==> Installing radxa-firmware-qcs6490 ${RADXA_FW_VER}"
-curl -fsSL -o "${WORKDIR}/radxa-firmware-qcs6490.deb" \
-    "https://github.com/radxa-pkg/radxa-firmware/releases/download/${RADXA_FW_VER}/radxa-firmware-qcs6490_${RADXA_FW_VER}_all.deb"
-apt-get install -y "${WORKDIR}/radxa-firmware-qcs6490.deb"
+if [ -d /usr/lib/dsp/cdsp ] && [ -d /usr/lib/rfsa/adsp ]; then
+    echo "==> cDSP firmware already present (/usr/lib/dsp/cdsp + /usr/lib/rfsa/adsp) — skipping radxa-firmware-qcs6490"
+else
+    echo "==> Installing radxa-firmware-qcs6490 ${RADXA_FW_VER}"
+    if curl -fsSL -o "${WORKDIR}/radxa-firmware-qcs6490.deb" \
+            "https://github.com/radxa-pkg/radxa-firmware/releases/download/${RADXA_FW_VER}/radxa-firmware-qcs6490_${RADXA_FW_VER}_all.deb" \
+       && apt-get install -y "${WORKDIR}/radxa-firmware-qcs6490.deb"; then
+        :
+    else
+        echo "    ⚠️  radxa-firmware-qcs6490 install failed — its dependency firmware-qcom-hlosfw"
+        echo "        may not be available from your configured apt sources. If your board's BSP"
+        echo "        image already provides the cDSP firmware this is harmless; the summary below"
+        echo "        confirms whether /usr/lib/dsp + /usr/lib/rfsa are present. If they are NOT,"
+        echo "        install your board vendor's cDSP firmware package and re-run."
+    fi
+fi
 
 # hexagonrpcd from the apt 'hexagonrpcd' package conflicts with cdsprpcd by
 # holding /dev/fastrpc-* exclusively. We need cdsprpcd for QNN HTP.
@@ -260,7 +280,12 @@ if [ "${OK_QAIRT}" -ne 1 ]; then
 fi
 echo "If detection ever stops working (Frigate logs show 'IndexError' from"
 echo "qnn.py or 'Failed to create transport for device, error: 4000'), the"
-echo "cDSP is in a stuck state. Reset with:"
-echo "  sudo sh -c 'echo stop > /sys/class/remoteproc/remoteproc1/state; \\"
-echo "              sleep 2; echo start > /sys/class/remoteproc/remoteproc1/state'"
-echo "then restart your Frigate container."
+echo "cDSP is in a stuck state. Recover by REBOOTING THE HOST:"
+echo "  sudo reboot"
+echo "The cdsp-reset.service installed above bounces the remoteproc cleanly at"
+echo "boot, when nothing holds the fastrpc devices."
+echo
+echo "WARNING: do NOT 'echo stop/start > /sys/class/remoteproc/remoteproc1/state'"
+echo "on a running system. On Linux 6.18 / QCS6490, resetting the remoteproc while"
+echo "any process (a Frigate container, a benchmark) holds /dev/fastrpc-* triggers"
+echo "an unrecoverable kernel data abort — only a power-cycle recovers. Reboot instead."
