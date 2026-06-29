@@ -480,7 +480,7 @@ This pins the SDK version to the one the Frigate image was built against, downlo
 If you would rather download it yourself (or are on a non-Radxa board where you skip the script), do it manually:
 
 ```bash
-QAIRT_VERSION=2.38.0.250901
+QAIRT_VERSION=2.45.40.260406
 curl -A 'Mozilla/5.0' -L -o qairt.zip \
   "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_VERSION}/v${QAIRT_VERSION}.zip"
 sudo unzip -q qairt.zip -d /opt/qcom/
@@ -517,8 +517,8 @@ volumes:
   # NOTE: libcdsprpc.so (the FastRPC user-space side of the bridge to the cDSP)
   # is now bundled inside the -qualcomm image, so it is no longer mounted here.
   # QAIRT runtime libraries (downloaded in Step 2 above). Adjust the version.
-  - /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
-  - /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
+  - /opt/qcom/qairt/2.45.40.260406/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
+  - /opt/qcom/qairt/2.45.40.260406/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
   # your downloaded model directory (holds yolov8_det.bin) — see the detector
   # config at /configuration/object_detectors#qualcomm-hexagon-npu
   - ./models:/models:ro
@@ -534,8 +534,8 @@ Or, with `docker run`:
 --device /dev/dma_heap/system \
 -v /usr/lib/dsp:/usr/lib/dsp:ro \
 -v /usr/lib/rfsa:/usr/lib/rfsa:ro \
--v /opt/qcom/qairt/2.38.0.250901/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
--v /opt/qcom/qairt/2.38.0.250901/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro \
+-v /opt/qcom/qairt/2.45.40.260406/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
+-v /opt/qcom/qairt/2.45.40.260406/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro \
 -v ./models:/models:ro
 ```
 
