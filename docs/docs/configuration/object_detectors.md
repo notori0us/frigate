@@ -761,11 +761,11 @@ Hardware accelerated object detection is supported on the following Qualcomm SoC
 
 - QCS6490 (Hexagon v68, ~12 TOPS) — including the [Radxa Dragon Q6A](https://radxa.com/products/dragon/q6a/) and similar boards
 
-This implementation uses the [Qualcomm AI Runtime (QAIRT) SDK](https://www.qualcomm.com/developer/software/qualcomm-ai-runtime-sdk) via the open-source [`qai_appbuilder`](https://github.com/quic/ai-engine-direct-helper) Python bindings (BSD-3). The QAIRT runtime libraries are mounted from the host at `/opt/qairt` — they are not bundled in the Frigate image. Models are pre-compiled QNN context binaries (`.bin`) downloaded from [Qualcomm AI Hub](https://aihub.qualcomm.com/).
+This implementation uses the [Qualcomm AI Runtime (QAIRT) SDK](https://www.qualcomm.com/developer/software/qualcomm-ai-runtime-sdk) via the open-source [`qai_appbuilder`](https://github.com/quic/ai-engine-direct-helper) Python bindings (BSD-3). The QAIRT runtime libraries are mounted from the host at `/opt/qairt` — they are not bundled in the Frigate image. Models are QNN context binaries (`.bin`) you compile for your SoC with [Qualcomm AI Hub](https://aihub.qualcomm.com/) — see [Getting the model](#getting-the-model).
 
 :::warning
 
-The pre-compiled YOLOv8 weights from Qualcomm AI Hub originate from Ultralytics and are subject to the AGPL-3.0 license. They cannot be used commercially without a separate license from Ultralytics.
+The YOLOv8 weights from Qualcomm AI Hub originate from Ultralytics and are subject to the AGPL-3.0 license. They cannot be used commercially without a separate license from Ultralytics.
 
 :::
 
@@ -773,18 +773,33 @@ The pre-compiled YOLOv8 weights from Qualcomm AI Hub originate from Ultralytics 
 
 Make sure to follow the [Qualcomm specific installation instructions](/frigate/installation#qualcomm-platform).
 
-### Downloading a Model
+### Getting the model
 
-Frigate does not bundle the YOLOv8 weights. Download a QNN context binary for your SoC from Qualcomm AI Hub once and mount it into the container:
+Frigate does not bundle the YOLOv8 weights. Compile a QNN context binary for the QCS6490 from [Qualcomm AI Hub](https://aihub.qualcomm.com/) with the [`qai-hub-models`](https://github.com/quic/ai-hub-models) exporter (a free AI Hub account + API token are required; the export runs as cloud jobs). The QCS6490's Hexagon v68 has no FP16, so the model **must** be quantized — use `w8a8`:
 
 ```bash
+python -m venv .venv && source .venv/bin/activate      # Python 3.10–3.12
+pip install "qai-hub-models[yolov8-det]"
+qai-hub configure --api_token <YOUR_TOKEN>             # token at https://app.aihub.qualcomm.com/account/
+
+python -m qai_hub_models.models.yolov8_det.export \
+  --target-runtime qnn_context_binary \
+  --chipset qualcomm-qcs6490 \
+  --quantize w8a8 \
+  --height 640 --width 640 \
+  --output-dir ./export_out
+
 mkdir -p ./models
-# from https://aihub.qualcomm.com/compute/models/yolov8_det
-# (sign in, choose target "qualcomm-qcs6490-proxy", download .bin)
-mv ~/Downloads/yolov8_det.bin ./models/
+cp ./export_out/*/*.bin ./models/yolov8_det.bin
 ```
 
 Mount `./models` into the container at `/models` and reference the file from your config. The COCO-80 label map (`/labelmap/coco-80.txt`, referenced below) ships **inside** the `-qualcomm` image — you do not need to download or create it.
+
+:::note
+
+AI Hub compiles context binaries with QAIRT 2.45+, matching the QAIRT version this image is built against. The model and the image's runtime must share a compatible QAIRT version — see the [version-match note](/frigate/installation#qualcomm-platform).
+
+:::
 
 ### Configuration
 
@@ -834,13 +849,9 @@ cameras:
 
 The inference time on a Radxa Dragon Q6A (QCS6490, Hexagon v68) is approximately 10–25 ms per frame at 640×640 — varying with system load and the number of cameras pumping frames into the detector.
 
-### Compiling Your Own Model
+### Compiling a different model or SoC
 
-To compile a different model — or to compile YOLOv8 for a Qualcomm SoC other than QCS6490 — use [Qualcomm AI Hub](https://aihub.qualcomm.com/). The workflow is:
-
-1. Sign in to AI Hub and find a model (for example, [YOLOv8 Detection](https://aihub.qualcomm.com/compute/models/yolov8_det)).
-2. Submit a compile job for your target device (e.g. `qualcomm-qcs6490-proxy`). The job emits a QNN context binary (`.bin`) sized for that SoC's Hexagon variant.
-3. Download the `.bin` and mount it into the container as above.
+The command above produces the stock YOLOv8n. To export a different checkpoint, or YOLOv8 for a Qualcomm SoC other than QCS6490, adjust the export arguments — pass a different `--chipset` (browse the available targets at [Qualcomm AI Hub](https://aihub.qualcomm.com/)) and/or a custom `--checkpoint`. Keep `--quantize w8a8` for Hexagon targets without FP16.
 
 The output-tensor ordering of YOLOv8 differs by SoC: QCS6490 yields `[scores, classes, boxes]` (handled by `soc_id: "6490"`); other SoCs yield `[boxes, scores, classes]` (use `soc_id: "other"`).
 
