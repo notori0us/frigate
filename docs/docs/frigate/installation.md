@@ -437,6 +437,130 @@ or add these options to your `docker run` command:
 
 Next, you should configure [hardware object detection](/configuration/object_detectors#synaptics) and [hardware video processing](/configuration/hardware_acceleration_video#synaptics).
 
+### Qualcomm platform
+
+Hardware accelerated object detection on the Hexagon NPU is supported on the following Qualcomm SoCs:
+
+- QCS6490 (Hexagon v68) — including the Radxa Dragon Q6A and similar boards
+
+Make sure your kernel exposes the FastRPC bridges to the cDSP. On a configured board you should see:
+
+```
+$ ls /dev/fastrpc-*
+/dev/fastrpc-adsp  /dev/fastrpc-cdsp  /dev/fastrpc-cdsp-secure
+```
+
+Your host kernel must also carry the FastRPC bug fixes from Linux 6.18.36 (or mainline 7.1) or newer; older kernels can corrupt kernel memory and hard-lock the host under sustained NPU load (see the [kernel requirement](/configuration/object_detectors#qualcomm-hexagon-npu)).
+
+#### Installation
+
+Hexagon NPU access needs a few things from the host: the FastRPC daemon (`cdsprpcd`) and the cDSP firmware/skel libraries (the QNN HTP backend `dlopen`s these at runtime), plus the **QAIRT runtime libraries** which Frigate does NOT bundle and which you mount into the container at runtime. The FastRPC user-space library (`libcdsprpc.so`) is now bundled inside the `-qualcomm` image, so you no longer bind-mount it from the host.
+
+##### Step 1: FastRPC + firmware + group
+
+We provide a convenient script for Radxa Dragon Q6A and similar Debian/Armbian boards:
+
+1. Download [`user_installation.sh`](https://raw.githubusercontent.com/blakeblackshear/frigate/dev/docker/qualcomm/user_installation.sh).
+2. Make it executable: `sudo chmod +x user_installation.sh`
+3. Run it: `sudo ./user_installation.sh`
+4. Log out and back in so your user picks up the `fastrpc` group.
+
+The script installs the [`fastrpc`](https://github.com/radxa-pkg/fastrpc) user-space, the [`radxa-firmware-qcs6490`](https://github.com/radxa-pkg/radxa-firmware) firmware, disables the conflicting `hexagonrpcd` services, and starts a `cdsprpcd` systemd service. For non-Radxa QCS6490 boards, install your board vendor's equivalent FastRPC + cDSP firmware packages. It finishes by printing a `✅`/`❌` summary of every prerequisite (fastrpc, firmware, `cdsprpcd`, group membership, QAIRT).
+
+##### Step 2: Get the QAIRT SDK
+
+The QAIRT runtime libraries are proprietary Qualcomm and are distributed by Qualcomm directly. The **Community Edition** is freely downloadable, no portal login required.
+
+The easiest path is to let `user_installation.sh` fetch and unpack it for you. Because the SDK is proprietary, the download is gated behind explicit license acceptance — pass `--accept-qairt-license` (or type `accept` when prompted):
+
+```bash
+sudo ./user_installation.sh --fetch-qairt --accept-qairt-license
+```
+
+This pins the SDK version to the one the Frigate image was built against, downloads it into `/opt/qcom/qairt/<version>`, and is idempotent (it skips the ~1.4 GB download if that directory already exists). By accepting the license you agree to Qualcomm's SDK terms (shown at the download page and bundled as `LICENSE.pdf`).
+
+If you would rather download it yourself (or are on a non-Radxa board where you skip the script), do it manually:
+
+```bash
+QAIRT_VERSION=2.45.40.260406
+curl -A 'Mozilla/5.0' -L -o qairt.zip \
+  "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QAIRT_VERSION}/v${QAIRT_VERSION}.zip"
+sudo unzip -q qairt.zip -d /opt/qcom/
+```
+
+The version must match the `qai_appbuilder` Python wheel built into the Frigate image — see the [Frigate image release notes](https://github.com/blakeblackshear/frigate/releases) for the matching QAIRT version. The `--fetch-qairt` path handles this automatically by pinning the same version the script ships with.
+
+:::warning
+
+The QAIRT version on the host **must match** the `qai_appbuilder` build version in the Frigate image. The QNN binary ABI is locked per release (e.g. `QnnInterface_ImplementationV2_28_t` is added in 2.38.0, `V2_31_t` in 2.42.0). Mismatched versions cause `Inference()` to silently return an empty list at runtime — no Python exception, just zero detections. Watch for `Failed to create transport for device, error: 4000` in the container logs.
+
+:::
+
+#### Setup
+
+Use a Docker image with the `-qualcomm` suffix, for example `ghcr.io/blakeblackshear/frigate:stable-qualcomm`.
+
+Grant the container access to the FastRPC devices, the host's cDSP firmware paths, and mount the QAIRT runtime libraries. Add the following to your `docker-compose.yml`:
+
+```yaml
+group_add:
+  - "107" # fastrpc group GID on the host. Verify with `getent group fastrpc`.
+devices:
+  - /dev/fastrpc-cdsp
+  - /dev/fastrpc-cdsp-secure
+  - /dev/fastrpc-adsp
+  - /dev/dma_heap/system
+volumes:
+  # cDSP firmware refuses to load skels from any path other than these on
+  # the host. Bind-mount them into the container so they appear at the
+  # expected locations inside the container.
+  - /usr/lib/dsp:/usr/lib/dsp:ro
+  - /usr/lib/rfsa:/usr/lib/rfsa:ro
+  # NOTE: libcdsprpc.so (the FastRPC user-space side of the bridge to the cDSP)
+  # is now bundled inside the -qualcomm image, so it is no longer mounted here.
+  # QAIRT runtime libraries (downloaded in Step 2 above). Adjust the version.
+  - /opt/qcom/qairt/2.45.40.260406/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro
+  - /opt/qcom/qairt/2.45.40.260406/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro
+  # your downloaded model directory (holds yolov8_det.bin) — see the detector
+  # config at /configuration/object_detectors#qualcomm-hexagon-npu
+  - ./models:/models:ro
+```
+
+Or, with `docker run`:
+
+```
+--group-add $(getent group fastrpc | cut -d: -f3) \
+--device /dev/fastrpc-cdsp \
+--device /dev/fastrpc-cdsp-secure \
+--device /dev/fastrpc-adsp \
+--device /dev/dma_heap/system \
+-v /usr/lib/dsp:/usr/lib/dsp:ro \
+-v /usr/lib/rfsa:/usr/lib/rfsa:ro \
+-v /opt/qcom/qairt/2.45.40.260406/lib/aarch64-oe-linux-gcc11.2:/opt/qairt/lib:ro \
+-v /opt/qcom/qairt/2.45.40.260406/lib/hexagon-v68:/opt/qairt/hexagon-v68:ro \
+-v ./models:/models:ro
+```
+
+#### Verify the setup
+
+Before starting Frigate, run the preflight check with the same devices and mounts as your service. It validates every bind-mount, the fastrpc group access, the `ADSP_LIBRARY_PATH` separator, and that the host QAIRT version matches the one the image was built against — each prerequisite reports `[PASS]` or `[FAIL]` with the exact fix:
+
+```bash
+docker compose run --rm --entrypoint python3 frigate -m frigate.detectors.plugins.qnn
+```
+
+The detector also performs the QAIRT version check automatically at startup and logs a clear error naming both versions if they differ, instead of silently returning zero detections.
+
+#### Configuration
+
+Next, configure [hardware object detection](/configuration/object_detectors#qualcomm-hexagon-npu) to complete the setup.
+
+#### Troubleshooting
+
+**Detection silently stops working / Frigate logs `QNN inference returned unexpected result`**: the cDSP session is in a wedged state. This typically happens after a detector subprocess crash (or after the host kernel has been live for a long time with many container restarts). The plugin disables itself locally when this is detected — it returns zero detections rather than crashing, so Frigate's watchdog won't restart the subprocess and pollute the cDSP further.
+
+**Recovery: reboot the host.** Container restarts are not enough — the wedged state lives in the kernel's fastrpc driver and the cDSP firmware. **Do not** attempt online recovery via `echo stop > /sys/class/remoteproc/remoteproc1/state` while Frigate (or any other process holding `/dev/fastrpc-*` fds) is running. On Linux 6.18 / qcs6490, that triggers a kernel WARNING in `free_contig_range` followed by an unrecoverable data abort in `fastrpc_device_release` on the next `close()` of any open fastrpc fd. The box becomes unresponsive and only a power-cycle recovers.
+
 ### AXERA
 
 AXERA accelerators are available in an M.2 form factor, compatible with both Raspberry Pi and Orange Pi. This form factor has also been successfully tested on x86 platforms, making it a versatile choice for various computing environments.
