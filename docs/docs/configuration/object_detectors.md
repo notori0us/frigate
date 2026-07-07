@@ -8,7 +8,7 @@ import ConfigTabs from '@site/src/components/ConfigTabs';
 import TabItem from '@theme/TabItem';
 import NavPath from '@site/src/components/NavPath';
 import ModelConfigDropdown from '@site/src/components/ModelConfigDropdown';
-import objectDetectorsModels from '@site/data/object_detectors_models.json';
+import objectDetectorsModels from '@site/data/object_detectors_models.yaml';
 
 ### Supported hardware
 
@@ -238,7 +238,7 @@ detectors:
 </TabItem>
 </ConfigTabs>
 
-### Configuration
+### Configuration {#configuration-edgetpu}
 
 <ModelConfigDropdown detectorTitle="EdgeTPU" models={objectDetectorsModels.edgeTPU.models} />
 
@@ -256,7 +256,7 @@ If no custom model is provided, the Hailo detector downloads a default model fro
 
 :::
 
-### Configuration
+### Configuration {#configuration-hailo}
 
 When configuring the Hailo detector, you have two options to specify the model: a local **path** or a **URL**.
 If both are provided, the detector will first check for the model at the given local path. If the file is not found, it will download the model from the specified URL. The model file is cached under `/config/model_cache/hailo`.
@@ -298,7 +298,7 @@ detectors:
 
 :::
 
-### Configuration
+### Configuration {#configuration-openvino}
 
 <ModelConfigDropdown detectorTitle="OpenVINO" models={objectDetectorsModels.openvino.models} />
 
@@ -308,12 +308,12 @@ detectors:
 
 The NPU in Apple Silicon can't be accessed from within a container, so the [Apple Silicon detector client](https://github.com/frigate-nvr/apple-silicon-detector) must first be setup. It is recommended to use the Frigate docker image with `-standard-arm64` suffix, for example `ghcr.io/blakeblackshear/frigate:stable-standard-arm64`.
 
-### Setup
+### Setup {#setup-apple-silicon}
 
 1. Setup the [Apple Silicon detector client](https://github.com/frigate-nvr/apple-silicon-detector) and run the client
 2. Configure the detector in Frigate and startup Frigate
 
-### Configuration
+### Configuration {#configuration-apple-silicon}
 
 Using the detector config below will connect to the client:
 
@@ -323,7 +323,7 @@ Note that the labelmap uses a subset of the complete COCO label set that has onl
 
 ## AMD/ROCm GPU detector
 
-### Setup
+### Setup {#setup-rocm}
 
 Support for AMD GPUs is provided using the [ONNX detector](#onnx). In order to utilize the AMD GPU for object detection use a frigate docker image with `-rocm` suffix, for example `ghcr.io/blakeblackshear/frigate:stable-rocm`.
 
@@ -401,7 +401,7 @@ We unset the `HSA_OVERRIDE_GFX_VERSION` to prevent an existing override from mes
 $ docker exec -it frigate /bin/bash -c '(unset HSA_OVERRIDE_GFX_VERSION && /opt/rocm/bin/rocminfo |grep gfx)'
 ```
 
-### Configuration
+### Configuration {#configuration-rocm}
 
 :::tip
 
@@ -455,7 +455,7 @@ detectors:
 
 :::
 
-### Configuration
+### Configuration {#configuration-onnx}
 
 <ModelConfigDropdown detectorTitle="ONNX" models={objectDetectorsModels.onnx.models} />
 
@@ -475,7 +475,7 @@ The number of threads used by the interpreter can be specified using the `"num_t
 
 A TensorFlow Lite model is provided in the container at `/cpu_model.tflite` and is used by this detector type by default. To provide your own model, bind mount the file into the container and provide the path with `model.path`.
 
-### Configuration
+### Configuration {#configuration-cpu}
 
 <ModelConfigDropdown detectorTitle="CPU" models={objectDetectorsModels.cpu.models} />
 
@@ -485,13 +485,13 @@ When using CPU detectors, you can add one CPU detector per camera. Adding more d
 
 The Deepstack / CodeProject.AI Server detector for Frigate allows you to integrate Deepstack and CodeProject.AI object detection capabilities into Frigate. CodeProject.AI and DeepStack are open-source AI platforms that can be run on various devices such as the Raspberry Pi, Nvidia Jetson, and other compatible hardware. It is important to note that the integration is performed over the network, so the inference times may not be as fast as native Frigate detectors, but it still provides an efficient and reliable solution for object detection and tracking.
 
-### Setup
+### Setup {#setup-deepstack}
 
 To get started with CodeProject.AI, visit their [official website](https://www.codeproject.com/Articles/5322557/CodeProject-AI-Server-AI-the-easy-way) to follow the instructions to download and install the AI server on your preferred device. Detailed setup instructions for CodeProject.AI are outside the scope of the Frigate documentation.
 
 To integrate CodeProject.AI into Frigate, configure the detector as follows:
 
-### Configuration
+### Configuration {#configuration-deepstack}
 
 <ModelConfigDropdown detectorTitle="DeepStack" models={objectDetectorsModels.deepstack.models} />
 
@@ -509,7 +509,7 @@ See the [installation docs](../frigate/installation.md#memryx-mx3) for informati
 
 To configure a MemryX detector, simply set the `type` attribute to `memryx` and follow the configuration guide below.
 
-### Configuration
+### Configuration {#configuration-memryx}
 
 <ModelConfigDropdown detectorTitle="MemryX" models={objectDetectorsModels.memryx.models} />
 
@@ -646,7 +646,7 @@ This implementation is based on sdk `v1.5.0`.
 
 See the [installation docs](../frigate/installation.md#synaptics) for information on configuring the SL-series NPU hardware.
 
-### Configuration
+### Configuration {#configuration-synaptics}
 
 When configuring the Synap detector, you have to specify the model: a local **path**.
 
@@ -755,11 +755,112 @@ Explanation of the paramters:
   - **example**: Specifying `output_name = "frigate-{quant}-{input_basename}-{soc}-v{tk_version}"` could result in a model called `frigate-i8-my_model-rk3588-v2.3.0.rknn`.
 - `config`: Configuration passed to `rknn-toolkit2` for model conversion. For an explanation of all available parameters have a look at section "2.2. Model configuration" of [this manual](https://github.com/MarcA711/rknn-toolkit2/releases/download/v2.3.2/03_Rockchip_RKNPU_API_Reference_RKNN_Toolkit2_V2.3.2_EN.pdf).
 
+## Qualcomm Hexagon NPU
+
+Hardware accelerated object detection is supported on the following Qualcomm SoCs:
+
+- QCS6490 (Hexagon v68)
+
+So far this has only been tested on the [Radxa Dragon Q6A](https://radxa.com/products/dragon/q6a/).
+
+This implementation uses the [Qualcomm AI Runtime (QAIRT) SDK](https://www.qualcomm.com/developer/software/qualcomm-ai-runtime-sdk) via the open-source [`qai_appbuilder`](https://github.com/quic/ai-engine-direct-helper) Python bindings (BSD-3). The QAIRT runtime libraries are mounted from the host at `/opt/qairt` and are not bundled in the Frigate image. Models are QNN context binaries (`.bin`) you compile for your SoC with [Qualcomm AI Hub](https://aihub.qualcomm.com/). See [Getting the model](#getting-the-model).
+
+:::warning
+
+The YOLOv8 weights from Qualcomm AI Hub originate from Ultralytics and are subject to the AGPL-3.0 license. They cannot be used commercially without a separate license from Ultralytics.
+
+:::
+
+### Prerequisites
+
+Make sure to follow the [Qualcomm specific installation instructions](/frigate/installation#qualcomm-platform).
+
+:::warning
+
+The Qualcomm `fastrpc` kernel driver in Linux kernels before 6.18.36 has use-after-free and DMA bugs (including CVE-2026-53160) that can corrupt kernel memory and hard-lock the host under sustained NPU load. Run a kernel that carries the `fastrpc` fixes from Linux 6.18.36 (or mainline 7.1) or newer. If your board vendor ships an older kernel, verify those fixes are backported before running this detector. This detector was validated on Linux 6.18.37.
+
+:::
+
+### Getting the model
+
+Frigate does not bundle the YOLOv8 weights. Compile a QNN context binary for the QCS6490 from [Qualcomm AI Hub](https://aihub.qualcomm.com/) using the [`qai-hub-models`](https://github.com/quic/ai-hub-models) exporter. A free AI Hub account and API token are required, and the export runs as a cloud job. The QCS6490's Hexagon v68 has no FP16, so the model must be quantized to `w8a8`:
+
+```bash
+python -m venv .venv && source .venv/bin/activate      # Python 3.10-3.12
+pip install "qai-hub-models[yolov8-det]"
+qai-hub configure --api_token <YOUR_TOKEN>             # token at https://app.aihub.qualcomm.com/account/
+
+python -m qai_hub_models.models.yolov8_det.export \
+  --target-runtime qnn_context_binary \
+  --chipset qualcomm-qcs6490 \
+  --quantize w8a8 \
+  --height 640 --width 640 \
+  --output-dir ./export_out
+
+mkdir -p ./models
+cp ./export_out/*/*.bin ./models/yolov8_det.bin
+```
+
+Mount `./models` into the container at `/models` and reference the file from your config. The COCO-80 label map (`/labelmap/coco-80.txt`, referenced below) ships **inside** the `-qualcomm` image. You do not need to download or create it.
+
+:::note
+
+AI Hub compiles context binaries with QAIRT 2.45+, matching the QAIRT version this image is built against. The model and the image's runtime must share a compatible QAIRT version. See the [version-match note](/frigate/installation#qualcomm-platform).
+
+:::
+
+### Configuration
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detectors and model" /> and select **QNN** from the detector type dropdown and click **Add**, then configure:
+
+| Field                                    | Value                       |
+| ---------------------------------------- | --------------------------- |
+| **Custom object detector model path**    | `/models/yolov8_det.bin`    |
+| **Object Detection Model Type**          | `yolo-generic`              |
+| **Object detection model input width**   | `640`                       |
+| **Object detection model input height**  | `640`                       |
+| **Model Input Tensor Shape**             | `nhwc`                      |
+| **Model Input D Type**                   | `float`                     |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`     |
+
+</TabItem>
+<TabItem value="yaml">
+
+```yaml
+detectors:
+  hexagon:
+    type: qnn
+    soc_id: "6490"
+
+model:
+  path: /models/yolov8_det.bin
+  model_type: yolo-generic
+  width: 640
+  height: 640
+  input_tensor: nhwc
+  input_dtype: float
+  labelmap_path: /labelmap/coco-80.txt
+```
+
+</TabItem>
+</ConfigTabs>
+
+The inference time on a Radxa Dragon Q6A (QCS6490, Hexagon v68) is approximately 10-25 ms per frame at 640x640, depending on system load and the number of active cameras.
+
+### Compiling a different model or SoC
+
+The command above produces the stock YOLOv8n. To export a different checkpoint, or YOLOv8 for a Qualcomm SoC other than QCS6490, adjust the export arguments: pass a different `--chipset` (browse the available targets at [Qualcomm AI Hub](https://aihub.qualcomm.com/)) and/or a custom `--checkpoint`. Keep `--quantize w8a8` for Hexagon targets without FP16.
+
+The output-tensor ordering of YOLOv8 differs by SoC: QCS6490 yields `[scores, classes, boxes]` (handled by `soc_id: "6490"`); other SoCs yield `[boxes, scores, classes]` (use `soc_id: "other"`).
+
 ## DeGirum
 
 DeGirum is a detector that can use any type of hardware listed on [their website](https://hub.degirum.com). DeGirum can be used with local hardware through a DeGirum AI Server, or through the use of `@local`. You can also connect directly to DeGirum's AI Hub to run inferences. **Please Note:** This detector _cannot_ be used for commercial purposes.
 
-### Configuration
+### Configuration {#configuration-degirum}
 
 #### AI Server Inference
 
@@ -853,7 +954,7 @@ The AXEngine detector downloads its default model from HuggingFace on first star
 
 :::
 
-### Configuration
+### Configuration {#configuration-axengine}
 
 When configuring the AXEngine detector, you have to specify the model name.
 

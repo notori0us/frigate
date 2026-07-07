@@ -55,7 +55,7 @@ Frigate supports multiple different detectors that work on different types of ha
 **Most Hardware**
 
 - [Hailo](#hailo-8): The Hailo8 and Hailo8L AI Acceleration module is available in m.2 format with a HAT for RPi devices offering a wide range of compatibility with devices.
-  - [Supports many model architectures](../../configuration/object_detectors#configuration)
+  - [Supports many model architectures](../../configuration/object_detectors#configuration-hailo)
   - Runs best with tiny or small size models
 
 - [Google Coral EdgeTPU](#google-coral-tpu): The Google Coral EdgeTPU is available in USB and m.2 format allowing for a wide range of compatibility with devices.
@@ -295,6 +295,14 @@ The inference time of a rk3588 with all 3 cores enabled is typically 25-30 ms fo
 | Name             | AXERA AX650N/AX8850N Inference Time |
 | ---------------- | ----------------------------------- |
 | yolov9-tiny      | ~ 4 ms                              |
+
+### Qualcomm Hexagon NPU
+
+Frigate supports hardware accelerated object detection on Qualcomm Hexagon NPUs via the [QNN detector](/configuration/object_detectors#qualcomm-hexagon-npu). Tested on the QCS6490 (Hexagon v68) on a [Radxa Dragon Q6A](https://radxa.com/products/dragon/q6a/).
+
+| Name              | Inference Time |
+| ----------------- | -------------- |
+| QCS6490 / YOLOv8n | ~ 10–25 ms     |
 
 ## What does Frigate use the CPU for and what does it use a detector for? (ELI5 Version)
 
